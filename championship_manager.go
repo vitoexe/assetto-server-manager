@@ -382,6 +382,12 @@ func (cm *ChampionshipManager) StartEvent(championshipID string, eventID string,
 		return err
 	}
 
+	if championship.OpenEntrants {
+		event.RaceSetup.LockedEntryList = 0
+	} else {
+		event.RaceSetup.LockedEntryList = 1
+	}
+
 	config := ConfigIniDefault
 	config.CurrentRaceConfig = event.RaceSetup
 	config.CurrentRaceConfig.Cars = strings.Join(championship.ValidCarIDs(), ";")
@@ -400,15 +406,6 @@ func (cm *ChampionshipManager) StartEvent(championshipID string, eventID string,
 		}
 
 		entryList = filteredEntryList
-
-		// sign up championships also have pickup mode disabled
-		config.CurrentRaceConfig.PickupModeEnabled = 0
-	} else {
-		if championship.OpenEntrants {
-			config.CurrentRaceConfig.PickupModeEnabled = 1
-		} else {
-			config.CurrentRaceConfig.PickupModeEnabled = 0
-		}
 	}
 
 	config.CurrentRaceConfig.LoopMode = 1
@@ -420,6 +417,7 @@ func (cm *ChampionshipManager) StartEvent(championshipID string, eventID string,
 		entryList = nil
 	} else {
 		config.CurrentRaceConfig.MaxClients = len(entryList)
+		config.CurrentRaceConfig.PickupModeEnabled = 1
 	}
 
 	if !isPreChampionshipPracticeEvent {

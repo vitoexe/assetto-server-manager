@@ -145,6 +145,8 @@ func (rm *RaceManager) applyConfigAndStart(config ServerConfig, entryList EntryL
 
 	if config.CurrentRaceConfig.HasSession(SessionTypeBooking) {
 		config.CurrentRaceConfig.PickupModeEnabled = 0
+	} else {
+		config.CurrentRaceConfig.PickupModeEnabled = 1
 	}
 
 	// drs zones management
@@ -424,18 +426,11 @@ func (rm *RaceManager) BuildCustomRaceFromForm(r *http.Request) (*CurrentRaceCon
 	isSol := r.FormValue("Sol.Enabled") == "1"
 
 	gasPenaltyDisabled := formValueAsInt(r.FormValue("RaceGasPenaltyDisabled"))
-	lockedEntryList := formValueAsInt(r.FormValue("LockedEntryList"))
 
 	if gasPenaltyDisabled == 0 {
 		gasPenaltyDisabled = 1
 	} else {
 		gasPenaltyDisabled = 0
-	}
-
-	if lockedEntryList == 0 {
-		lockedEntryList = 1
-	} else {
-		lockedEntryList = 0
 	}
 
 	trackLayout := r.FormValue("TrackLayout")
@@ -481,7 +476,7 @@ func (rm *RaceManager) BuildCustomRaceFromForm(r *http.Request) (*CurrentRaceCon
 		},
 
 		// rules
-		PickupModeEnabled:         lockedEntryList,
+		LockedEntryList:           formValueAsInt(r.FormValue("LockedEntryList")),
 		RacePitWindowStart:        formValueAsInt(r.FormValue("RacePitWindowStart")),
 		RacePitWindowEnd:          formValueAsInt(r.FormValue("RacePitWindowEnd")),
 		ReversedGridRacePositions: formValueAsInt(r.FormValue("ReversedGridRacePositions")),
@@ -497,6 +492,12 @@ func (rm *RaceManager) BuildCustomRaceFromForm(r *http.Request) (*CurrentRaceCon
 		MaxContactsPerKilometer:   formValueAsInt(r.FormValue("MaxContactsPerKilometer")),
 		ResultScreenTime:          formValueAsInt(r.FormValue("ResultScreenTime")),
 		DisableDRSZones:           formValueAsInt(r.FormValue("DisableDRSZones")) == 1,
+	}
+
+	if raceConfig.HasSession(SessionTypeBooking) {
+		raceConfig.PickupModeEnabled = 0
+	} else {
+		raceConfig.PickupModeEnabled = 1
 	}
 
 	if isSol {
