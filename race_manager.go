@@ -25,13 +25,10 @@ var (
 )
 
 type RaceManager struct {
-	process             ServerProcess
+	multiServerManager  *MultiServerManager
 	raceStore           Store
 	carManager          *CarManager
 	notificationManager NotificationDispatcher
-
-	currentRace      *ServerConfig
-	currentEntryList EntryList
 
 	mutex sync.RWMutex
 
@@ -46,27 +43,36 @@ type RaceManager struct {
 
 func NewRaceManager(
 	raceStore Store,
-	process ServerProcess,
+	multiServerManager *MultiServerManager,
 	carManager *CarManager,
 	notificationManager NotificationDispatcher,
 ) *RaceManager {
 	return &RaceManager{
 		raceStore:           raceStore,
-		process:             process,
+		multiServerManager:  multiServerManager,
 		carManager:          carManager,
 		notificationManager: notificationManager,
 	}
 }
 
-func (rm *RaceManager) CurrentRace() (*ServerConfig, EntryList) {
+func (rm *RaceManager) CurrentRace(serverID int) (*ServerConfig, EntryList) {
 	rm.mutex.RLock()
 	defer rm.mutex.RUnlock()
 
-	if !rm.process.IsRunning() {
+	s, err := rm.multiServerManager.GetServer(serverID)
+
+	if err != nil {
+		panic(err)
+	}
+
+	if !s.ServerProcess.IsRunning() {
 		return nil, nil
 	}
 
-	return rm.currentRace, rm.currentEntryList
+	config := s.ServerProcess.GetServerConfig()
+	entryList := s.ServerProcess.GetEntryList()
+
+	return &config, entryList
 }
 
 var ErrEntryListTooBig = errors.New("servermanager: EntryList exceeds MaxClients setting")
@@ -114,7 +120,7 @@ func (n normalEvent) GetURL() string {
 	return ""
 }
 
-func (rm *RaceManager) applyConfigAndStart(raceConfig CurrentRaceConfig, entryList EntryList, loop bool, event RaceEvent) error {
+func (rm *RaceManager) applyConfigAndStart(serverID int, raceConfig CurrentRaceConfig, entryList EntryList, loop bool, event RaceEvent) error {
 	rm.mutex.Lock()
 	defer rm.mutex.Unlock()
 
@@ -178,30 +184,27 @@ func (rm *RaceManager) applyConfigAndStart(raceConfig CurrentRaceConfig, entryLi
 		config.GlobalServerConfig.Name += fmt.Sprintf(" %c%d", contentManagerWrapperSeparator, config.GlobalServerConfig.ContentManagerWrapperPort)
 	}
 
-	err = config.Write()
+	var server *Server
+
+	if serverID < 0 {
+		server, err = rm.multiServerManager.FreeServer()
+	} else {
+		server, err = rm.multiServerManager.GetServer(serverID)
+	}
 
 	if err != nil {
 		return err
 	}
 
-	err = entryList.Write()
-
-	if err != nil {
-		return err
-	}
-
-	rm.currentRace = &config
-	rm.currentEntryList = entryList
-
-	if rm.process.IsRunning() {
-		err := rm.process.Stop()
+	if server.ServerProcess.IsRunning() {
+		err := server.ServerProcess.Stop()
 
 		if err != nil {
 			return err
 		}
 	}
 
-	err = rm.process.Start(config, entryList, forwardingAddress, forwardListenPort, event)
+	err = server.ServerProcess.Start(config, entryList, forwardingAddress, forwardListenPort, event)
 
 	if err != nil {
 		return err
@@ -346,7 +349,7 @@ func (rm *RaceManager) SetupQuickRace(r *http.Request) error {
 
 	quickRace.MaxClients = numPitboxes
 
-	return rm.applyConfigAndStart(quickRace, entryList, false, normalEvent{})
+	return rm.applyConfigAndStart(-1, quickRace, entryList, false, normalEvent{})
 }
 
 func formValueAsInt(val string) int {
@@ -670,7 +673,7 @@ func (rm *RaceManager) SetupCustomRace(r *http.Request) error {
 			return nil
 		}
 
-		return rm.applyConfigAndStart(completeConfig.CurrentRaceConfig, entryList, false, race)
+		return rm.applyConfigAndStart(-1, completeConfig.CurrentRaceConfig, entryList, false, race)
 	}
 }
 
@@ -989,7 +992,7 @@ func (rm *RaceManager) SaveCustomRace(
 	return race, nil
 }
 
-func (rm *RaceManager) StartCustomRace(uuid string, forceRestart bool) error {
+func (rm *RaceManager) StartCustomRace(serverID int, uuid string, forceRestart bool) error {
 	race, err := rm.raceStore.FindCustomRaceByID(uuid)
 
 	if err != nil {
@@ -1001,7 +1004,7 @@ func (rm *RaceManager) StartCustomRace(uuid string, forceRestart bool) error {
 		race.RaceConfig.LoopMode = 1
 	}
 
-	return rm.applyConfigAndStart(race.RaceConfig, race.EntryList, forceRestart, race)
+	return rm.applyConfigAndStart(serverID, race.RaceConfig, race.EntryList, forceRestart, race)
 }
 
 func (rm *RaceManager) ScheduleRace(uuid string, date time.Time, action string, recurrence string) error {
@@ -1077,7 +1080,8 @@ func (rm *RaceManager) ScheduleRace(uuid string, date time.Time, action string, 
 }
 
 func (rm *RaceManager) StartScheduledRace(race *CustomRace) error {
-	err := rm.StartCustomRace(race.UUID.String(), false)
+	// @TODO should scheduled  races have specified server?
+	err := rm.StartCustomRace(-1, race.UUID.String(), false)
 
 	if err != nil {
 		return err
@@ -1213,43 +1217,46 @@ func (rm *RaceManager) LoopRaces() {
 	ticker := time.NewTicker(30 * time.Second)
 
 	for range ticker.C {
-		currentRace, _ := rm.CurrentRace()
+		for serverID := range rm.multiServerManager.ListServers() {
 
-		if currentRace != nil {
-			continue
-		}
+			currentRace, _ := rm.CurrentRace(serverID)
 
-		_, _, looped, _, err := rm.ListCustomRaces()
-
-		if err != nil {
-			logrus.Errorf("couldn't list custom races, err: %s", err)
-			return
-		}
-
-		if looped != nil {
-			if i >= len(looped) {
-				i = 0
+			if currentRace != nil {
+				continue
 			}
 
-			// Reset the stored session types
-			rm.loopedRaceSessionTypes = []SessionType{}
-
-			for sessionID := range looped[i].RaceConfig.Sessions {
-				rm.loopedRaceSessionTypes = append(rm.loopedRaceSessionTypes, sessionID)
-			}
-
-			if looped[i].RaceConfig.ReversedGridRacePositions != 0 {
-				rm.loopedRaceSessionTypes = append(rm.loopedRaceSessionTypes, SessionTypeSecondRace)
-			}
-
-			err := rm.StartCustomRace(looped[i].UUID.String(), true)
+			_, _, looped, _, err := rm.ListCustomRaces()
 
 			if err != nil {
-				logrus.Errorf("couldn't start auto loop custom race, err: %s", err)
+				logrus.Errorf("couldn't list custom races, err: %s", err)
 				return
 			}
 
-			i++
+			if looped != nil {
+				if i >= len(looped) {
+					i = 0
+				}
+
+				// Reset the stored session types
+				rm.loopedRaceSessionTypes = []SessionType{}
+
+				for sessionID := range looped[i].RaceConfig.Sessions {
+					rm.loopedRaceSessionTypes = append(rm.loopedRaceSessionTypes, sessionID)
+				}
+
+				if looped[i].RaceConfig.ReversedGridRacePositions != 0 {
+					rm.loopedRaceSessionTypes = append(rm.loopedRaceSessionTypes, SessionTypeSecondRace)
+				}
+
+				err := rm.StartCustomRace(serverID, looped[i].UUID.String(), true)
+
+				if err != nil {
+					logrus.Errorf("couldn't start auto loop custom race, err: %s", err)
+					return
+				}
+
+				i++
+			}
 		}
 	}
 }

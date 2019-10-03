@@ -31,6 +31,7 @@ type ServerProcess interface {
 	UDPCallback(message udp.Message)
 	SendUDPMessage(message udp.Message) error
 	GetServerConfig() ServerConfig
+	GetEntryList() EntryList
 
 	Done() <-chan struct{}
 }
@@ -98,6 +99,18 @@ func (as *AssettoServerProcess) Start(cfg ServerConfig, entryList EntryList, for
 	defer as.mutex.Unlock()
 
 	logrus.Debugf("Starting assetto server process")
+
+	err := cfg.Write()
+
+	if err != nil {
+		return err
+	}
+
+	err = entryList.Write()
+
+	if err != nil {
+		return err
+	}
 
 	as.serverConfig = cfg
 	as.entryList = entryList
@@ -365,6 +378,10 @@ func (as *AssettoServerProcess) Stop() error {
 
 func (as *AssettoServerProcess) GetServerConfig() ServerConfig {
 	return as.serverConfig
+}
+
+func (as *AssettoServerProcess) GetEntryList() EntryList {
+	return as.entryList
 }
 
 func FreeUDPPort() (int, error) {
