@@ -15,6 +15,7 @@ Added:
 * You can now filter stock, DLC and mod cars in or out of the car search. Check out the car search help for more details! Please note that you will need to rebuild your search index for this to work. Go to Server Options, scroll down to "Maintenance" and click "Rebuild Search Index"!
 * Server Manager will now set up some example Championships and Custom Races if you have not yet created any
 * You can now sort the EntryList for a Championship Race Weekend Session by the number of Championship points a driver has. This could be useful for running reverse grid qualifying races!
+* Added a health-check endpoint. Hopefully this will help us with debugging issues!
 
 Fixes:
 
@@ -27,6 +28,7 @@ Fixes:
 * Fixes an issue where drivers who switched teams mid-Championship had an incorrect number of races shown for their teams.
 * Championship event inheritance now correctly uses the previous event setup, not the first event setup
 * Fixes an issue where tyres did not show correctly in Session configuration for Championship Race Weekend events.
+* Fixes an issue where placeholder entrants were incorrectly added to the entrylist of a Race Weekend practice session.
 
 ---
 
