@@ -58,7 +58,7 @@ export class EntryList {
 
         // When the skin is changed on all initially loaded cars
         this.$parent.find(".entryListSkin").change((e: JQuery.ChangeEvent) => {
-            this.showEntrantSkin($(e.currentTarget).closest(".entrant").find(".entryListCar").val(), $(this).val(), $(this))
+            this.showEntrantSkin($(e.currentTarget).closest(".entrant").find(".entryListCar").val(), $(e.currentTarget).val(), $(e.currentTarget))
         });
 
 
@@ -111,8 +111,8 @@ export class EntryList {
             $elem.find(".btn-delete-entrant").click(this.deleteEntrant.bind(this));
 
             // when the skin changes on an added entrant
-            $elem.find(".entryListSkin").change( () => {
-                this.showEntrantSkin($elem.find(".entryListCar").val(), $(this).val(), $(this))
+            $elem.find(".entryListSkin").change( (e: JQuery.ChangeEvent) => {
+                this.showEntrantSkin($elem.find(".entryListCar").val(), $(e.currentTarget).val(), $(e.currentTarget))
             });
 
             if (chosenCar) {

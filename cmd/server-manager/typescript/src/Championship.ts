@@ -35,7 +35,7 @@ export namespace Championship {
         private saveChampionshipEventOrder(): void {
             let championshipEventIDs: string[] = [];
 
-            $(".championship-event").each(function() {
+            $(".championship-event").each(function () {
                 if (!$(this).hasClass("gu-mirror")) {
                     // dragula duplicates the element being moved as a 'mirror',
                     // ignore it when building championship event id list
@@ -130,9 +130,10 @@ export namespace Championship {
 
     export class Edit {
         private $document = $(document);
+        private $pointsTemplate: JQuery<Document>;
 
         public constructor() {
-            let $pointsTemplate = this.$document.find(".points-place").last().clone();
+            this.$pointsTemplate = this.$document.find(".points-place").last().clone();
 
             $(".race-setup").each(function (index, elem) {
                 // init totalNumPoints val to be equal to the number of .points-place's visible in the class.
@@ -142,37 +143,7 @@ export namespace Championship {
             });
 
             this.$document.on("click", ".addEntrant", function (e) {
-                e.preventDefault();
 
-                let $raceSetup = $(this).closest(".race-setup");
-                let $pointsParent = $raceSetup.find(".points-parent");
-
-                if (!$pointsParent.length) {
-                    return;
-                }
-
-                let $points = $raceSetup.find(".points-place");
-                let numEntrants = $raceSetup.find(".entrant:visible").length;
-                let numPoints = $points.length;
-
-                for (let i = numPoints; i < numEntrants; i++) {
-                    // add points up to the numEntrants we have
-                    let $newPoints = $pointsTemplate.clone();
-                    $newPoints.find("label").text(ordinalSuffix(i + 1) + " Place");
-
-                    let pointsVal = 0;
-
-                    // load the default points value for this position
-                    if (i < defaultPoints.Places.length) {
-                        pointsVal = defaultPoints.Places[i];
-                    }
-
-                    $newPoints.find("input").attr({"value": pointsVal});
-                    $pointsParent.append($newPoints);
-                }
-
-                let $savedNumPoints = $raceSetup.find(".totalNumPoints");
-                $savedNumPoints.val($raceSetup.find(".points-place:visible").length);
             });
 
             this.initClassSetup();
@@ -190,7 +161,7 @@ export namespace Championship {
                 this.setSwitchesForACSR(state);
             }
 
-            $acsrSwitch.on('switchChange.bootstrapSwitch',  (event, state) => {
+            $acsrSwitch.on('switchChange.bootstrapSwitch', (event, state) => {
                 this.setSwitchesForACSR(state);
             });
         }
@@ -280,16 +251,14 @@ export namespace Championship {
                 $(this).closest(".entrant").find(".points-transfer").show();
             });
 
-            this.$document.on("change", ".Cars", function(e) {
+            this.$document.on("change", ".Cars", function (e) {
                 let $target = $(e.currentTarget);
 
                 $target.closest(".race-setup").find("input[name='NumCars']").val(($target.val() as string).length);
             });
         }
 
-        $linkTemplate: null;
-
-        private initSummerNote () {
+        private initSummerNote() {
             if ($(".championship").length === 0 && $("#championship-form").length === 0) {
                 return;
             }
@@ -310,66 +279,105 @@ export namespace Championship {
                 height: 200,
             });
         }
+
+        private addEntrant(e: JQuery.ClickEvent): void {
+            e.preventDefault();
+
+            let $raceSetup = $(this).closest(".race-setup");
+            let $pointsParent = $raceSetup.find(".points-parent");
+
+            if (!$pointsParent.length) {
+                return;
+            }
+
+            let $points = $raceSetup.find(".points-place");
+            let numEntrants = $raceSetup.find(".entrant:visible").length;
+            let numPoints = $points.length;
+
+            for (let i = numPoints; i < numEntrants; i++) {
+                // add points up to the numEntrants we have
+                let $newPoints = this.$pointsTemplate.clone();
+                $newPoints.find("label").text(ordinalSuffix(i + 1) + " Place");
+
+                let pointsVal = 0;
+
+                // load the default points value for this position
+                if (i < defaultPoints.Places.length) {
+                    pointsVal = defaultPoints.Places[i];
+                }
+
+                $newPoints.find("input").attr({"value": pointsVal});
+                $pointsParent.append($newPoints);
+            }
+
+            let $savedNumPoints = $raceSetup.find(".totalNumPoints");
+            $savedNumPoints.val($raceSetup.find(".points-place:visible").length);
+        }
     }
 
     export class SignUpForm {
-        public constructor () {
+        private $skinsDropdown: JQuery<HTMLElement>;
+        private $carsDropdown: JQuery<HTMLElement>;
+        private $carPreviewImage: JQuery<HTMLElement>;
+
+        public constructor() {
             let $signUpForm = $("#championship-signup-form");
+            this.$skinsDropdown = $signUpForm.find("#Skin");
+            this.$carsDropdown = $signUpForm.find("#Car");
+            this.$carPreviewImage = $signUpForm.find("#CarPreview");
 
             if ($signUpForm.length < 1) {
                 return;
             }
 
-            function populateSkinsDropdown(car) {
-                if (typeof availableCars === "undefined") {
-                    return;
-                }
+            this.populateSkinsDropdown(this.$carsDropdown.val() as string);
+            this.showCarImage(this.$carsDropdown.val() as string, this.$skinsDropdown.val() as string);
 
-                let selected = $skinsDropdown.val();
-
-                $skinsDropdown.empty();
-
-                if (car in availableCars) {
-                    for (let skin of availableCars[car]) {
-                        $skinsDropdown.append($("<option>", {
-                            "val": skin,
-                            "text": prettifyName(skin, true),
-                            "selected": skin === selected,
-                        }));
-                    }
-                }
-            }
-
-            function showCarImage(car, skin) {
-                let path = "/content/cars/" + car + "/skins/" + skin + "/preview.jpg";
-
-                $.get(path)
-                    .done(function () {
-                        $carPreviewImage.attr({"src": path, "alt": prettifyName(skin, false)})
-                    })
-                    .fail(function () {
-                        path = "/static/img/no-preview-car.png";
-                        $carPreviewImage.attr({"src": path, "alt": "Preview Image"})
-                    })
-                ;
-            }
-
-            let $skinsDropdown = $signUpForm.find("#Skin");
-            let $carsDropdown = $signUpForm.find("#Car");
-            let $carPreviewImage = $signUpForm.find("#CarPreview");
-
-            populateSkinsDropdown($carsDropdown.val());
-            showCarImage($carsDropdown.val(), $skinsDropdown.val());
-
-            $carsDropdown.on("change", function () {
-                let $this = $(this);
-                populateSkinsDropdown($this.val());
-                showCarImage($this.val(), $skinsDropdown.val());
+            this.$carsDropdown.on("change", (e: JQuery.ChangeEvent) => {
+                let $this = $(e.currentTarget);
+                this.populateSkinsDropdown($this.val() as string);
+                this.showCarImage($this.val() as string, this.$skinsDropdown.val() as string);
             });
 
-            $skinsDropdown.on("change", function () {
-                showCarImage($carsDropdown.val(), $skinsDropdown.val());
+            this.$skinsDropdown.on("change", () => {
+                this.showCarImage(this.$carsDropdown.val() as string, this.$skinsDropdown.val() as string);
             });
+        }
+
+
+        private populateSkinsDropdown(car: string): void {
+            if (typeof availableCars === "undefined") {
+                return;
+            }
+
+            let selected = this.$skinsDropdown.val();
+
+            this.$skinsDropdown.empty();
+
+            if (car in availableCars) {
+                for (let skin of availableCars[car]) {
+                    this.$skinsDropdown.append($("<option>", {
+                        "val": skin,
+                        "text": prettifyName(skin, true),
+                        "selected": skin === selected,
+                    }));
+                }
+            }
+        }
+
+        private showCarImage(car: string, skin: string): void {
+            let path = "/content/cars/" + car + "/skins/" + skin + "/preview.jpg";
+            let that = this;
+
+            $.get(path)
+                .done(function () {
+                    that.$carPreviewImage.attr({"src": path, "alt": prettifyName(skin, false)})
+                })
+                .fail(function () {
+                    path = "/static/img/no-preview-car.png";
+                    that.$carPreviewImage.attr({"src": path, "alt": "Preview Image"})
+                })
+            ;
         }
     }
 }
