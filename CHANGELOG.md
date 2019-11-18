@@ -1,3 +1,19 @@
+v1.5.4
+------
+
+Added:
+
+* Results pages now show your 'Potential' lap time - the sum of your best sectors.
+
+Fixes:
+
+* Setting the ballast on an entrant to a larger value than the Max Ballast option no longer stops the server from starting.
+* Results pages now correctly display statistics per car - so if you're switching cars in a session you can see accurate reports for that car.
+* Penalties are now applied per driver and car, rather than just per driver.
+* Fixes an issue where events scheduled in a multi-server scenario would start on the wrong server.
+
+---
+
 v1.5.3
 ------
 
