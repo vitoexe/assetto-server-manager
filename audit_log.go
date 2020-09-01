@@ -54,7 +54,7 @@ func (alh *AuditLogHandler) Middleware(next http.Handler) http.Handler {
 		}
 
 		entry := &AuditEntry{
-			UserGroup: account.Group,
+			UserGroup: account.Group(),
 			Method:    r.Method,
 			URL:       r.URL.String(),
 			User:      account.Name,
@@ -93,6 +93,9 @@ func (alh *AuditLogHandler) viewLogs(w http.ResponseWriter, r *http.Request) {
 
 	// render audit log page
 	alh.viewRenderer.MustLoadTemplate(w, r, "server/audit-logs.html", &auditLogTemplateVars{
+		BaseTemplateVars: BaseTemplateVars{
+			WideContainer: true,
+		},
 		AuditLogs: auditLogs,
 	})
 }

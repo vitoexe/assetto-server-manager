@@ -1,20 +1,27 @@
 package servermanager
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"image"
+	"image/draw"
 	"image/png"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/JustaPenguin/assetto-server-manager/cmd/server-manager/static"
 
 	"github.com/cj123/ini"
 	"github.com/dimchansky/utfbom"
 	"github.com/go-chi/chi"
+	"github.com/nfnt/resize"
 	"github.com/sirupsen/logrus"
 )
 
@@ -86,9 +93,9 @@ func (t Track) PrettyName() string {
 func (t Track) IsPaidDLC() bool {
 	if _, ok := isTrackPaidDLC[t.Name]; ok {
 		return isTrackPaidDLC[t.Name]
-	} else {
-		return false
 	}
+
+	return false
 }
 
 func (t Track) IsMod() bool {
@@ -179,17 +186,18 @@ func GetTrackInfo(name, layout string) (*TrackInfo, error) {
 
 	uiDataFile = filepath.Join(uiDataFile, trackInfoJSONName)
 
-	f, err := os.Open(uiDataFile)
+	data, err := ioutil.ReadFile(uiDataFile)
 
 	if err != nil {
 		return nil, err
 	}
 
-	defer f.Close()
+	data = bytes.ReplaceAll(data, []byte("\r"), []byte(""))
+	data = bytes.ReplaceAll(data, []byte("\n"), []byte(""))
 
 	var trackInfo *TrackInfo
 
-	err = json.NewDecoder(utfbom.SkipOnly(f)).Decode(&trackInfo)
+	err = json.NewDecoder(utfbom.SkipOnly(bytes.NewBuffer(data))).Decode(&trackInfo)
 
 	return trackInfo, err
 }
@@ -269,7 +277,7 @@ func (th *TracksHandler) delete(w http.ResponseWriter, r *http.Request) {
 
 func (th *TracksHandler) view(w http.ResponseWriter, r *http.Request) {
 	trackName := chi.URLParam(r, "track_id")
-	templateParams, err := th.trackManager.LoadTrackDetailsForTemplate(trackName)
+	templateParams, err := th.trackManager.loadTrackDetailsForTemplate(trackName)
 
 	if os.IsNotExist(err) {
 		http.NotFound(w, r)
@@ -296,6 +304,21 @@ func (th *TracksHandler) saveMetadata(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, r.Referer(), http.StatusFound)
 }
 
+func (th *TracksHandler) trackImage(w http.ResponseWriter, r *http.Request) {
+	track := chi.URLParam(r, "track")
+	layout := chi.URLParam(r, "layout")
+
+	w.Header().Add("Content-Type", "image/png")
+	n, err := th.trackManager.GetTrackImage(w, track, layout)
+
+	if err != nil {
+		image := static.FSMustByte(false, "/img/no-preview-general.png")
+		_, _ = w.Write(image)
+	} else {
+		w.Header().Add("Content-Length", strconv.Itoa(int(n)))
+	}
+}
+
 type TrackManager struct {
 }
 
@@ -311,7 +334,7 @@ type trackDetailsTemplateVars struct {
 	Results   map[string][]SessionResults
 }
 
-func (tm *TrackManager) LoadTrackDetailsForTemplate(trackName string) (*trackDetailsTemplateVars, error) {
+func (tm *TrackManager) loadTrackDetailsForTemplate(trackName string) (*trackDetailsTemplateVars, error) {
 	trackInfoMap := make(map[string]*TrackInfo)
 	resultsMap := make(map[string][]SessionResults)
 
@@ -401,6 +424,107 @@ func (tm *TrackManager) ListTracks() ([]Track, error) {
 	return tracks, nil
 }
 
+func (tm *TrackManager) decodeTrackImage(path string) (image.Image, error) {
+	f, err := os.Open(path)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer f.Close()
+
+	data, _, err := image.Decode(f)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return data, err
+}
+
+const (
+	trackMapOverlayScale = 2.0
+)
+
+func (tm *TrackManager) GetTrackImage(w io.Writer, track, layout string) (int64, error) {
+	trackContentPath := filepath.Join(ServerInstallPath, "content", "tracks", track, "ui")
+	trackMapPath := filepath.Join(ServerInstallPath, "content", "tracks", track, "map.png")
+
+	if layout != "" {
+		trackContentPath = filepath.Join(trackContentPath, layout)
+		trackMapPath = filepath.Join(ServerInstallPath, "content", "tracks", track, layout, "map.png")
+	}
+
+	trackImagePath := filepath.Join(trackContentPath, "preview.png")
+	trackOutlinePath := filepath.Join(trackContentPath, "outline.png")
+
+	combinedImageMapPath := filepath.Join(trackContentPath, "server-manager_preview.png")
+	combinedImageMap, err := os.Open(combinedImageMapPath)
+
+	if err == nil {
+		defer combinedImageMap.Close()
+
+		return io.Copy(w, combinedImageMap)
+	} else if !os.IsNotExist(err) {
+		return -1, err
+	}
+
+	trackImage, err := tm.decodeTrackImage(trackImagePath)
+
+	if err != nil {
+		return -1, err
+	}
+
+	trackMap, err := tm.decodeTrackImage(trackMapPath)
+
+	if os.IsNotExist(err) {
+		trackMap, err = tm.decodeTrackImage(trackOutlinePath)
+
+		if err != nil {
+			return -1, err
+		}
+	} else if err != nil {
+		return -1, err
+	}
+
+	trackImageBounds := trackImage.Bounds()
+	trackMapBounds := trackMap.Bounds()
+
+	var resizedMap image.Image
+
+	marginX, marginY := 10, 10
+
+	if trackMapBounds.Dx() > trackMapBounds.Dy() {
+		resizedMap = resize.Resize(uint(float64(trackImageBounds.Dx())/trackMapOverlayScale), 0, trackMap, resize.Bilinear)
+	} else {
+		resizedMap = resize.Resize(0, uint(float64(trackImageBounds.Dy())/trackMapOverlayScale), trackMap, resize.Bilinear)
+		marginX = 20
+		marginY = 20
+	}
+
+	combined := image.NewRGBA(trackImageBounds)
+	draw.Draw(combined, trackImageBounds, trackImage, image.Point{}, draw.Src)
+	draw.Draw(combined, trackImageBounds, resizedMap, image.Pt(-trackImageBounds.Dx()+resizedMap.Bounds().Dx()+marginX, -trackImageBounds.Dy()+resizedMap.Bounds().Dy()+marginY), draw.Over)
+
+	combinedImageMap, err = os.Create(combinedImageMapPath)
+
+	if err != nil {
+		return -1, err
+	}
+
+	defer combinedImageMap.Close()
+
+	if err := png.Encode(combinedImageMap, combined); err != nil {
+		return -1, err
+	}
+
+	if _, err := combinedImageMap.Seek(0, 0); err != nil {
+		return -1, err
+	}
+
+	return io.Copy(w, combinedImageMap)
+}
+
 func (tm *TrackManager) GetTrackFromName(name string) (*Track, error) {
 	tracksPath := filepath.Join(ServerInstallPath, "content", "tracks")
 	var layouts []string
@@ -416,12 +540,12 @@ func (tm *TrackManager) GetTrackFromName(name string) (*Track, error) {
 	if len(files) > 1 {
 		for _, layout := range files {
 			if layout.IsDir() {
-				if layout.Name() == "data" {
+				switch layout.Name() {
+				case "data":
 					layouts = append(layouts, defaultLayoutName)
-				} else if layout.Name() == "ui" {
-					// ui folder, not a layout
+				case "ui":
 					continue
-				} else {
+				default:
 					// valid layouts must contain a surfaces.ini
 					_, err := os.Stat(filepath.Join(tracksPath, name, layout.Name(), "data", "surfaces.ini"))
 
@@ -528,6 +652,16 @@ func LoadTrackMapData(track, trackLayout string) (*TrackMapData, error) {
 	return &mapData, nil
 }
 
+func TrackMapImageURL(track, trackLayout string) string {
+	p := "/content/tracks/" + track
+
+	if trackLayout != "" {
+		p += "/" + trackLayout
+	}
+
+	return p + "/map.png"
+}
+
 func LoadTrackMapImage(track, trackLayout string) (image.Image, error) {
 	p := filepath.Join(ServerInstallPath, "content", "tracks", track)
 
@@ -627,15 +761,15 @@ func trackSummary(track, layout string) string {
 
 	if info != nil {
 		return info.Name
-	} else {
-		track := prettifyName(track, false)
-
-		if layout != "" {
-			track += fmt.Sprintf(" (%s)", prettifyName(layout, true))
-		}
-
-		return track
 	}
+
+	track = prettifyName(track, false)
+
+	if layout != "" {
+		track += fmt.Sprintf(" (%s)", prettifyName(layout, true))
+	}
+
+	return track
 }
 
 func trackDownloadLink(track string) string {

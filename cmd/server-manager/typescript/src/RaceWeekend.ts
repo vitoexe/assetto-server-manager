@@ -1,4 +1,5 @@
 import ChangeEvent = JQuery.ChangeEvent;
+import ClickEvent = JQuery.ClickEvent;
 import {Connection, jsPlumb, jsPlumbInstance} from "jsplumb";
 import dagre, {graphlib} from "dagre";
 import {initMultiSelect} from "./javascript/manager";
@@ -76,6 +77,8 @@ export namespace RaceWeekend {
 
             $(".view-results").on("click", this.onViewResultsClick);
             $(".manage-entrylist").on("click", this.openManageEntryListModal);
+
+            this.initSessionDetailsButtons();
         }
 
         private initJsPlumb(): void {
@@ -215,6 +218,24 @@ export namespace RaceWeekend {
                 $results.collapse('show');
             });
         }
+
+        private initSessionDetailsButtons(): void {
+            $(document).on("click", ".race-weekend-session-details", (e: ClickEvent) => {
+                let $this = $(e.currentTarget);
+                let sessionID = $this.attr("data-session-id");
+
+                const modalContentURL = `/event-details?raceWeekendID=${RaceWeekendID}&sessionID=${sessionID}`;
+
+                $.get(modalContentURL).then((data: string) => {
+                    let $eventDetailsModal = $("#session-details-modal");
+                    $eventDetailsModal.html(data);
+                    $eventDetailsModal.find("input[type='checkbox']").bootstrapSwitch();
+                    $eventDetailsModal.modal();
+                });
+
+                return false;
+            });
+        }
     }
 
     /**
@@ -278,6 +299,12 @@ export namespace RaceWeekend {
         }
     }
 
+    enum SplitType {
+        Numeric = "Numeric",
+        ManualDriverSelection = "Manual Driver Selection",
+        ChampionshipClass = "Championship Class",
+    }
+
     /**
      * SessionTransition is the modal shown when a user clicks on an arrow between two Race Weekend Sessions.
      */
@@ -290,8 +317,11 @@ export namespace RaceWeekend {
         private reverseGrid: number = 0;
         private gridStart!: number;
         private sortType!: string;
-        private availableResultsForSorting!: string[];
+        private availableResultsForSorting: string[] = [];
         private startOnFastestLapTyre: boolean = false;
+        private splitType: SplitType = SplitType.Numeric;
+        private selectedDriverGUIDs: string[] = [];
+        private SelectedChampionshipClassIDs: object = {};
 
         public constructor($elem: JQuery<HTMLElement>, parentSessionID: string, childSessionID: string) {
             super($elem);
@@ -311,7 +341,10 @@ export namespace RaceWeekend {
                 EntryListStart: this.gridStart,
                 SortType: this.sortType,
                 ForceUseTyreFromFastestLap: this.startOnFastestLapTyre,
-                AvailableResultsForSorting: this.availableResultsForSorting
+                AvailableResultsForSorting: this.availableResultsForSorting,
+                SplitType: this.splitType,
+                SelectedDriverGUIDs: this.selectedDriverGUIDs,
+                SelectedChampionshipClassIDs: this.SelectedChampionshipClassIDs,
             })
         }
 
@@ -324,10 +357,44 @@ export namespace RaceWeekend {
             this.availableResultsForSorting = this.$elem.find("#AvailableResults").val() as string[];
             this.startOnFastestLapTyre = this.$elem.find("#ForceUseTyreFromFastestLap").is(":checked");
 
-            if (this.sortType == "fastest_multi_results_lap") {
+            if (this.sortType == "fastest_multi_results_lap" || this.sortType == "number_multi_results_lap") {
                 this.$elem.find("#AvailableResultsWrapper").show()
             } else {
                 this.$elem.find("#AvailableResultsWrapper").hide()
+            }
+
+            let $driversMultiSelect = this.$elem.find("#Drivers");
+            let $classesMultiSelect = this.$elem.find("#Classes");
+
+            this.splitType = this.$elem.find("#SplitType").val() as SplitType;
+            this.selectedDriverGUIDs = $driversMultiSelect.val() as string[];
+
+            this.SelectedChampionshipClassIDs = {};
+
+            for (let classID of $classesMultiSelect.val() as string[]) {
+                this.SelectedChampionshipClassIDs[classID] = true;
+            }
+
+            switch (this.splitType) {
+                case SplitType.Numeric:
+                    this.$elem.find("#DriverSelectionForm").hide();
+                    this.$elem.find("#ClassSelectionForm").hide();
+                    this.$elem.find("#FilterFromTo").show();
+
+                    break;
+                case SplitType.ManualDriverSelection:
+                    this.$elem.find("#DriverSelectionForm").show();
+                    this.$elem.find("#ClassSelectionForm").hide();
+                    this.$elem.find("#FilterFromTo").hide();
+
+                    initMultiSelect($driversMultiSelect);
+                    break;
+                case SplitType.ChampionshipClass:
+                    this.$elem.find("#DriverSelectionForm").hide();
+                    this.$elem.find("#FilterFromTo").hide();
+                    this.$elem.find("#ClassSelectionForm").show();
+                    initMultiSelect($classesMultiSelect);
+                    break;
             }
 
             $.ajax(`/race-weekend/${RaceWeekendID}/grid-preview?parentSessionID=${this.parentSessionID}&childSessionID=${this.childSessionID}`, {
@@ -351,9 +418,14 @@ export namespace RaceWeekend {
                 $table.find("tr:not(:first-child)").remove();
                 this.buildClassKey(response.Classes);
 
-                for (let i = 0; i < grid.length || i < results.length; i++) {
+                for (let i = 0; i < Math.max(grid.length, results.length); i++) {
                     let $row = $("<tr>");
-                    $row.append(this.buildTableDataForEntrant(results[i], i));
+
+                    if (i < results.length) {
+                        $row.append(this.buildTableDataForEntrant(results[i], i));
+                    } else {
+                        $row.append($("<td>"));
+                    }
 
                     if (i < grid.length) {
                         $row.append(this.buildTableDataForEntrant(grid[i], i));

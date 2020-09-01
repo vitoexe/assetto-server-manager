@@ -83,7 +83,14 @@ func (cuh *ContentUploadHandler) addFiles(files []ContentFile, contentType Conte
 
 	uploadedCars := make(map[string]bool)
 
+	var tags []string
+
 	for _, file := range files {
+		if file.Name == "tags" {
+			tags = strings.Split(file.Data, ",")
+			continue
+		}
+
 		var fileDecoded []byte
 
 		if file.Size > 0 {
@@ -120,22 +127,6 @@ func (cuh *ContentUploadHandler) addFiles(files []ContentFile, contentType Conte
 		}
 
 		if contentType == ContentTypeCar {
-			if _, name := filepath.Split(file.FilePath); name == "data.acd" {
-				err := addTyresFromDataACD(file.FilePath, fileDecoded)
-
-				if err != nil {
-					logrus.WithError(err).Errorf("Could not create tyres for new car (%s)", file.FilePath)
-				}
-			} else if name == "tyres.ini" {
-				// it seems some cars don't pack their data into an ACD file, it's just in a folder called 'data'
-				// so we can just grab tyres.ini from there.
-				err := addTyresFromTyresIni(file.FilePath, fileDecoded)
-
-				if err != nil {
-					logrus.WithError(err).Errorf("Could not create tyres for new car (%s)", file.FilePath)
-				}
-			}
-
 			uploadedCars[parts[0]] = true
 		}
 
@@ -156,7 +147,17 @@ func (cuh *ContentUploadHandler) addFiles(files []ContentFile, contentType Conte
 				return err
 			}
 
+			for _, tag := range tags {
+				car.Details.AddTag(strings.TrimSpace(tag))
+			}
+
 			err = cuh.carManager.IndexCar(car)
+
+			if err != nil {
+				return err
+			}
+
+			err = cuh.carManager.SaveCarDetails(car.Name, car)
 
 			if err != nil {
 				return err

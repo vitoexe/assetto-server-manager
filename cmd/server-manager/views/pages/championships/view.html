@@ -1,4 +1,4 @@
-{{/* gotype: github.com/cj123/assetto-server-manager.championshipViewTemplateVars */}}
+{{/* gotype: github.com/JustaPenguin/assetto-server-manager.championshipViewTemplateVars */}}
 
 {{ define "title" }}{{ .Championship.Name }}{{ end }}
 
@@ -9,27 +9,74 @@
         {{ $writeAccess := WriteAccess }}
         {{ $eventInProgress := .EventInProgress }}
         {{ $account := .Account }}
+        {{ $serverID := .ServerID }}
+
+        {{ $meetsACSRGates := $championship.DriverMeetsACSRGates $.AccountRating }}
 
         <h1 class="text-center">{{ $championship.Name }}</h1>
 
-
+        {{ if $championship.ACSR }}
+            <div class="text-center">
+                <em>
+                    An <a href="https://acsr.assettocorsaservers.com">Assetto Corsa Skill Rating</a> Championship
+                </em>
+            </div>
+        {{ end }}
 
         {{ if $championship.SignUpAvailable }}
             <div class="card border-primary mb-3 mt-3">
                 <div class="card-header bg-primary text-white"><strong>Register to this Championship</strong></div>
 
                 <div class="card-body">
-                    You can register for a place in this Championship!
-                    {{ if $championship.SignUpForm.RequiresApproval }}
-                        Pending admin approval, you will be added to the grid!
+                    <p>
+                        You can register for a place in this Championship!
+                        {{ if $championship.SignUpForm.RequiresApproval }}
+                            Pending admin approval, you will be added to the grid!
+                        {{ end }}
+                    </p>
+
+                    {{ if $championship.ACSR }}
+                        {{ if or $championship.EnableACSRSkillGate $championship.EnableACSRSafetyGate }}
+                            You need to meet the following minimum ACSR ratings to join this Championship:
+
+                            {{ if $championship.EnableACSRSkillGate }}
+                                <span data-toggle="tooltip" title="Skill" class="badge badge-primary acsr-badge--skill">{{ $championship.ACSRSkillGate }}</span>
+                            {{ end }}
+                            {{ if $championship.EnableACSRSafetyGate }}
+                                <span data-toggle="tooltip" title="Safety" class="badge badge-success acsr-badge--safety">{{ $championship.ACSRSafetyGate }} </span>
+                            {{ end }}
+                            {{ with $account }}
+                                <p>
+                                    Your Rating:
+                                    {{ with $.AccountRating }}
+                                        <a class="acsr-link" href="https://acsr.assettocorsaservers.com/ratings/{{ anonymiseDriverGUID $account.GUID }}">
+                                            {{ if $championship.EnableACSRSkillGate }}
+                                                <span data-toggle="tooltip" title="Skill from {{ .NumEvents }} Sessions" class="badge badge-primary acsr-badge--skill">{{ .SkillRatingGrade }}</span>
+                                            {{ end }}
+                                            {{ if $championship.EnableACSRSafetyGate }}
+                                                <span data-toggle="tooltip" title="Safety from {{ .NumEvents }} Sessions" class="badge badge-success acsr-badge--safety">{{ .SafetyRating }}</span>
+                                            {{ end }}
+                                        </a>
+
+                                        {{ if $meetsACSRGates }}
+                                            <span class="text-success">You meet the requirements!</span>
+                                        {{ else }}
+                                            <span class="text-danger">Sorry, you don't meet the requirements!</span>
+                                        {{ end }}
+                                    {{ else }}
+                                        <span class="text-danger">Unknown! Please set your GUID on your account page or click register and enter your guid on the registration page!</span>
+                                    {{ end }}
+                                </p>
+                            {{ end }}
+                        {{ end }}
                     {{ end }}
 
                     <div class="float-right">
-                        <a class="btn btn-info" href="/championship/{{ $championship.ID.String }}/sign-up/steam">Register with Steam</a>
+                        <a class="btn btn-info {{ if not $meetsACSRGates }}disabled{{ end }}" href="/championship/{{ $championship.ID.String }}/sign-up/steam">Register with Steam</a>
 
                         <small class="pl-2 pr-2">or</small>
 
-                        <a class="btn btn-primary" href="/championship/{{ $championship.ID.String }}/sign-up">Register Now</a>
+                        <a class="btn btn-primary {{ if not $meetsACSRGates }}disabled{{ end }}" href="/championship/{{ $championship.ID.String }}/sign-up">Register Now</a>
                     </div>
                 </div>
             </div>
@@ -59,36 +106,85 @@
         <ul class="nav nav-tabs" role="tablist">
             {{ if gt $championship.Progress 0.0 }}
                 <li class="nav-item">
-                    <a class="nav-link active" id="drivers-tab" data-toggle="tab" href="#drivers" role="tab"
-                       aria-controls="drivers" aria-selected="true">Driver Standings</a>
+                    <a class="nav-link {{ if or (eq $championship.DefaultTab "Driver Standings") (eq $championship.DefaultTab "") }}active{{ end }}"
+                       id="drivers-tab"
+                       data-toggle="tab"
+                       href="#drivers"
+                       role="tab"
+                       aria-controls="drivers"
+                       aria-selected="{{ or (eq $championship.DefaultTab "Driver Standings") (eq $championship.DefaultTab "") }}"
+                    >
+                        Driver Standings
+                    </a>
                 </li>
                 {{ if $championship.HasTeamNames }}
                     <li class="nav-item">
-                        <a class="nav-link" id="teams-tab" data-toggle="tab" href="#teams" role="tab" aria-controls="teams"
-                           aria-selected="false">Team Standings</a>
+                        <a class="nav-link {{ if eq $championship.DefaultTab "Team Standings" }}active{{ end }}"
+                           id="teams-tab"
+                           data-toggle="tab"
+                           href="#teams"
+                           role="tab"
+                           aria-controls="teams"
+                           aria-selected="{{ eq $championship.DefaultTab "Team Standings" }}"
+                        >
+                            Team Standings
+                        </a>
                     </li>
                 {{ end }}
+                <li class="nav-item">
+                    <a class="nav-link {{ if eq $championship.DefaultTab "Overview" }}active{{ end }}"
+                       id="overview-tab"
+                       data-toggle="tab"
+                       href="#overview"
+                       role="tab"
+                       aria-controls="overview"
+                       aria-selected="{{ eq $championship.DefaultTab "Overview" }}"
+                    >
+                        Overview
+                    </a>
+                </li>
             {{ end }}
             <li class="nav-item">
-                <a class="nav-link {{ if eq $championship.Progress 0.0 }}active{{ end }}" id="entrants-tab" data-toggle="tab" href="#entrants" role="tab" aria-controls="teams"
-                   aria-selected="false">Entrants</a>
+                <a class="nav-link {{ if or (eq $championship.Progress 0.0) (eq $championship.DefaultTab "Entrants") }}active{{ end }}"
+                   id="entrants-tab"
+                   data-toggle="tab"
+                   href="#entrants"
+                   role="tab"
+                   aria-controls="teams"
+                   aria-selected="{{ eq $championship.DefaultTab "Entrants" }}"
+                >
+                    Entrants
+                </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" id="points-tab" data-toggle="tab" href="#points" role="tab" aria-controls="points"
-                   aria-selected="false">Points Reference</a>
+                <a class="nav-link {{ if eq $championship.DefaultTab "Points Reference" }}active{{ end }}"
+                   id="points-tab"
+                   data-toggle="tab"
+                   href="#points"
+                   role="tab"
+                   aria-controls="points"
+                   aria-selected="{{ eq $championship.DefaultTab "Points Reference" }}"
+                >
+                    Points Reference
+                </a>
             </li>
         </ul>
         <div class="tab-content">
 
 
             {{ if gt $championship.Progress 0.0 }}
-                <div class="tab-pane fade show active" id="drivers" role="tabpanel" aria-labelledby="drivers-tab">
+                <div class="tab-pane fade {{ if or (eq $championship.DefaultTab "Driver Standings") (eq $championship.DefaultTab "") }}show active{{ end }}" id="drivers" role="tabpanel" aria-labelledby="drivers-tab">
                     <div class="table-responsive entrant-table-max-height">
                         <table class="table table-bordered table-striped">
                             <tr>
                                 {{ if $championship.IsMultiClass }}<th>Class</th>{{ end }}
                                 <th>#</th>
                                 <th>Driver</th>
+                                {{ with $.DriverRatings }}
+                                    <th>
+                                        Rating
+                                    </th>
+                                {{ end }}
 
                                 {{ if $championship.HasTeamNames }}
                                     <th>Team</th>
@@ -101,7 +197,7 @@
 
 
                             {{ range $classIndex, $class := $championship.Classes }}
-                                {{ $entrants := ($class.Standings $championship.Events) }}
+                                {{ $entrants := ($class.Standings $championship $championship.Events) }}
 
                                 {{ range $i, $entrant := $entrants }}
                                     <tr style="
@@ -125,6 +221,12 @@
                                             {{ end }}
                                         </td>
 
+                                        {{ with $.DriverRatings }}
+                                            <td>
+                                                {{ template "acsr-rating" dict "DriverRatings" $.DriverRatings "GUID" $entrant.Car.Driver.GUID }}
+                                            </td>
+                                        {{ end }}
+
                                         {{ if $championship.HasTeamNames }}
                                             <td>{{ $entrant.TeamSummary }}</td>
                                         {{ end }}
@@ -134,12 +236,12 @@
                                             <td >
                                                 <button type="button" class="btn {{ if $championship.IsMultiClass}}btn-light{{ else }}btn-warning{{ end }} btn-sm" data-placement="left"
                                                         data-toggle="popover" title="Penalty Details" data-html="true"
-                                                        id="point-penalty-{{ $entrant.Car.Driver.GUID }}"
+                                                        id="point-penalty-{{ sha1sum $entrant.Car.Driver.GUID }}"
                                                 >
                                                     Penalties
                                                 </button>
 
-                                                <div id="popover-content-point-penalty-{{ $entrant.Car.Driver.GUID }}" style="display: none;">
+                                                <div id="popover-content-point-penalty-{{ sha1sum $entrant.Car.Driver.GUID }}" style="display: none;">
                                                     <form action="/championship/{{ $championship.ID.String }}/driver-penalty/{{ $class.ID.String }}/{{ $entrant.Car.Driver.GUID }}" method="POST">
                                                         <div class="form-group">
                                                             <label>
@@ -168,7 +270,7 @@
                     </div>
                 </div>
 
-                <div class="tab-pane fade" id="teams" role="tabpanel" aria-labelledby="teams-tab">
+                <div class="tab-pane fade {{ if eq $championship.DefaultTab "Team Standings" }}show active{{ end }}" id="teams" role="tabpanel" aria-labelledby="teams-tab">
                     <div class="table-responsive entrant-table-max-height">
                         <table class="table table-bordered table-striped">
                             <tr>
@@ -182,7 +284,7 @@
                             </tr>
 
                             {{ range $classIndex, $class := $championship.Classes }}
-                                {{ $teamStandings := ($class.TeamStandings $championship.Events) }}
+                                {{ $teamStandings := ($class.TeamStandings $championship $championship.Events) }}
 
                                 {{ range $i, $team := $teamStandings }}
                                     <tr {{ if $championship.IsMultiClass }} style="color: white; background: {{ classColor $classIndex }}" {{ end }}>
@@ -241,15 +343,22 @@
                         </table>
                     </div>
                 </div>
+
+                <div class="tab-pane fade {{ if eq $championship.DefaultTab "Overview" }}show active{{ end }}" id="overview" role="tabpanel" aria-labelledby="overview-tab">
+                    {{ template "championship-overview" dict "Championship" $championship "Account" $account }}
+                </div>
             {{ end }}
 
-            <div class="tab-pane fade {{ if eq $championship.Progress 0.0 }}show active{{ end }}" id="entrants" role="tabpanel" aria-labelledby="entrants-tab">
+            <div class="tab-pane fade {{ if or (eq $championship.Progress 0.0) (eq $championship.DefaultTab "Entrants") }}show active{{ end }}" id="entrants" role="tabpanel" aria-labelledby="entrants-tab">
                 <div class="table-responsive entrant-table-max-height">
                     <table class="table table-bordered table-striped">
                         <tr>
                             {{ if $championship.IsMultiClass }}<th>Class</th>{{ end }}
                             <th>#</th>
                             <th>Driver</th>
+                            {{ with $.DriverRatings }}
+                                <th>Rating</th>
+                            {{ end }}
                             {{ if $championship.HasTeamNames }}
                                 <th>Team</th>
                             {{ end }}
@@ -275,7 +384,11 @@
                                         {{ end }}
                                         <td><span data-toggle="tooltip" title="Pit Box: {{ $entrant.PitBox }}">{{ add $i 1 }}</span></td>
                                         <td>{{ driverName $entrant.Name }}</td>
-
+                                        {{ with $.DriverRatings }}
+                                            <td>
+                                                {{ template "acsr-rating" dict "DriverRatings" $.DriverRatings "GUID" $entrant.GUID }}
+                                            </td>
+                                        {{ end }}
                                         {{ if $championship.HasTeamNames }}
                                             <td>{{ $entrant.Team }}</td>
                                         {{ end }}
@@ -288,7 +401,7 @@
                                             {{ if $championship.IsMultiClass }}
                                                 <td>{{ $class.Name }}</td>
                                             {{ end }}
-                                            <td colspan="4">
+                                            <td colspan="100%">
                                                 <em>{{ $entrant.Name }}</em>
                                             </td>
                                         </tr>
@@ -300,7 +413,7 @@
                 </div>
             </div>
 
-            <div class="tab-pane fade" id="points" role="tabpanel" aria-labelledby="points-tab">
+            <div class="tab-pane fade {{ if eq $championship.DefaultTab "Points Reference" }}show active{{ end }}" id="points" role="tabpanel" aria-labelledby="points-tab">
                 <div class="table-responsive">
                     <table class="table table-bordered table-striped">
                         <tr>
@@ -373,7 +486,7 @@
                 <div class="row flex-row flex-nowrap pb-3" style="overflow-x: auto;">
 
                     {{ range $classIndex, $class := $championship.Classes }}
-                        {{ $entrants := ($class.Standings $championship.Events) }}
+                        {{ $entrants := ($class.Standings $championship $championship.Events) }}
 
                         {{ range $i, $entrant := $entrants }}
                             <div class="col-6 col-lg-3 col-md-3 col-sm-6 entrant-car">
@@ -419,8 +532,29 @@
 
         <div class="float-right">
             {{ if $writeAccess }}
-                <a class="btn btn-success" href="/championship/{{ $championship.ID.String }}/event">Add more Events</a>
-                <a class="btn btn-info" href="/race-weekends/new?championshipID={{ $championship.ID.String }}">Add a Race Weekend</a>
+                <div class="btn-group">
+
+                    <a class="btn btn-success" href="/championship/{{ $championship.ID.String }}/event">Add Events</a>
+
+                    <a href="#" style="min-width: 38px !important;" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" id="importCustomDropdown" class="btn btn-success btn-sm custom-race-actions-btn-small dropdown-toggle dropdown-toggle-split"
+                    ></a>
+
+                    <div class="dropdown-menu" aria-labelledby="importCustomDropdown">
+                        <a class="dropdown-item" href="/championship/{{ $championship.ID.String }}/custom/list">Import Custom Race</a>
+                    </div>
+                </div>
+
+                <div class="btn-group" style="min-width: 180px">
+
+                    <a class="btn btn-info" href="/race-weekends/new?championshipID={{ $championship.ID.String }}">Add a Race Weekend</a>
+
+                    <a href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" id="importWeekendDropdown" class="btn btn-info btn-sm custom-race-actions-btn-small dropdown-toggle dropdown-toggle-split"
+                    ></a>
+
+                    <div class="dropdown-menu" aria-labelledby="importWeekendDropdown">
+                        <a class="dropdown-item" href="/championship/{{ $championship.ID.String }}/race-weekend/list">Import Race Weekend</a>
+                    </div>
+                </div>
             {{ end }}
 
             <div class="dropdown show" style="display: inline-block">
@@ -489,12 +623,16 @@
         <div class="championship-events">
             {{ range $eventIndex, $event := $championship.Events }}
                 {{ if not $event.IsRaceWeekend }}
-                    {{ template "event-card" dict "Championship" $championship "Event" $event "EventIndex" $eventIndex "EventInProgress" $eventInProgress "Account" $account }}
+                    {{ template "event-card" dict "Championship" $championship "Event" $event "EventIndex" $eventIndex "EventInProgress" $eventInProgress "Account" $account "ServerID" $serverID "ShowEventDetailsPopup" $.ShowEventDetailsPopup }}
                 {{ else }}
                     {{ template "raceweekend-card" dict "Championship" $championship "Event" $event "EventIndex" $eventIndex "EventInProgress" $eventInProgress "Account" $account "RaceWeekend" (index $.RaceWeekends $event.RaceWeekendID) }}
                 {{ end }}
             {{ end }}
         </div>
+    </div>
+
+    <div class="modal" tabindex="-1" role="dialog" id="event-details-modal">
+        <!-- content controlled by js -->
     </div>
 
     <script type="text/javascript">

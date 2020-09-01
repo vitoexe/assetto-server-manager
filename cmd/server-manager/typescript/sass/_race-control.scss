@@ -102,6 +102,14 @@
   filter: drop-shadow(0 0 2px #000);
 }
 
+.img-map-preview {
+  -webkit-filter: drop-shadow(0 0 1px #000);
+  filter: drop-shadow(0 0 1px #000);
+  max-height: 200px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
 .dot {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -191,6 +199,21 @@ td .dot-inactive {
   display: inline-grid;
   -webkit-animation: cssAnimation 3s forwards;
   animation: cssAnimation 3s forwards;
+}
+
+.admin-command-input {
+    width: auto;
+}
+
+#chat-container {
+  overflow-y: scroll;
+  max-height: 120px;
+  scroll-behavior: smooth;
+  padding-left: 3rem;
+}
+
+.chat-message-sender {
+  margin-left: -2.5rem;
 }
 
 @keyframes cssAnimation {

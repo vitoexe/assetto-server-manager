@@ -1,4 +1,4 @@
-{{/* gotype: github.com/cj123/assetto-server-manager.liveTimingTemplateVars */}}
+{{/* gotype: github.com/JustaPenguin/assetto-server-manager.liveTimingTemplateVars */}}
 
 {{ define "title" }}Live Timing{{ end }}
 
@@ -83,7 +83,11 @@
             {{ end }}
 
             {{ if $.IsStrackerEnabled }}
-                <a href="/stracker/mainpage" class="btn btn-primary btn-sm mt-1">STracker</a>
+                <a href="{{ $.STrackerInterfacePublicURL }}" class="btn btn-primary btn-sm mt-1">sTracker</a>
+            {{ end }}
+
+            {{ if and $.IsKissMyRankEnabled (ne $.KissMyRankWebStatsPublicURL "") }}
+                <a href="{{ $.KissMyRankWebStatsPublicURL }}" target="_blank" class="btn btn-warning btn-sm mt-1">KissMyRank</a>
             {{ end }}
         </div>
 
@@ -117,6 +121,25 @@
 
             </form>
 
+            <form class="form p-1" id="send-chat-form" name="send-chat-form" action="/send-chat">
+                <div class="form-row" style="margin-bottom: -7px">
+                    <label for="send-chat">Send Chat to Driver: </label>
+                </div>
+
+                <div class="form-row mb-2">
+                    <select class="form-control-sm chat-user" name="chat-user" id="chat-user">
+                        <option value="default-driver-spacer">No drivers found!</option>
+                        <!-- driver kick opts appended by javascript -->
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <input type="text" name="send-chat" id="send-chat" class="send-chat form-control form-control-sm admin-command-input" placeholder="Watch those track limits!">
+
+                    <button class="btn btn-success btn-sm ml-1" type="submit">Send</button>
+                </div>
+            </form>
+
             <form class="form-inline p-1" id="admin-command-form" name="admin-command-form" action="/admin-command">
 
                 <div class="form-row">
@@ -133,7 +156,7 @@
 
             <form class="form p-1" id="kick-user-form" name="kick-user-form" action="/kick-user">
                 <div class="form-row" style="margin-bottom: -7px">
-                    <label for="kick-user">Kick User: </label>
+                    <label for="kick-user">Kick Driver: </label>
                 </div>
 
                 <div class="form-row">
@@ -145,6 +168,10 @@
                     <button class="btn btn-danger btn-sm ml-1" type="submit">Kick</button>
                 </div>
             </form>
+
+            <div style="height: 43px">
+                <a id="countdown" href="/countdown" class="btn btn-info btn-sm mt-3">Broadcast Countdown</a>
+            </div>
 
             <a id="next-session" href="/next-session" class="btn btn-success btn-sm mt-3">Next Session</a>
             <a id="restart-session" href="/restart-session" class="btn btn-warning btn-sm mt-3">Restart Session</a>
@@ -201,10 +228,23 @@
                             <img src="" class="img img-fluid img-bordered" id="trackMapImage">
                         </div>
                     </div>
+
+                    <div class="card card-body mt-2" id="chat-container">
+                        <div class="card-text chat-message-template"><span id="chat-message-sender"></span>Game chat!</div>
+                    </div>
+
+                    {{ if AdminAccess }}
+
+                        <form class="form mt-2" id="broadcast-chat-form" name="broadcast-chat-form" action="/broadcast-chat" autocomplete="off">
+                            <div class="form-group">
+                                <input type="text" name="broadcast-chat" id="broadcast-chat" class="broadcast-chat form-control form-control-sm" placeholder="Broadcast chat">
+                            </div>
+                        </form>
+
+                    {{ end }}
                 {{ end }}
             </div>
         </div>
-
 
         <form action="/live-timing/save-frames" method="post" class="live-frames row mt-2">
             <!-- Hidden, used for cloning -->

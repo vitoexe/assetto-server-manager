@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"4d63.com/tz"
 	"github.com/go-chi/chi"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -152,10 +154,10 @@ func (rwh *RaceWeekendHandler) submitSessionConfiguration(w http.ResponseWriter,
 		// end the race creation flow
 		http.Redirect(w, r, "/race-weekend/"+raceWeekend.ID.String(), http.StatusFound)
 		return
-	} else {
-		// add another session
-		http.Redirect(w, r, "/race-weekend/"+raceWeekend.ID.String()+"/session", http.StatusFound)
 	}
+
+	// add another session
+	http.Redirect(w, r, "/race-weekend/"+raceWeekend.ID.String()+"/session", http.StatusFound)
 }
 
 func (rwh *RaceWeekendHandler) startSession(w http.ResponseWriter, r *http.Request) {
@@ -280,6 +282,8 @@ type raceWeekendFilterTemplateVars struct {
 	ResultsAvailableForSorting  []SessionResults
 	Filter                      *RaceWeekendSessionToSessionFilter
 	AvailableSorters            []RaceWeekendEntryListSorterDescription
+	ParentSessionResults        []*RaceWeekendSessionEntrant
+	ChampionshipClasses         map[uuid.UUID]*ChampionshipClass
 }
 
 func (rwh *RaceWeekendHandler) manageFilters(w http.ResponseWriter, r *http.Request) {
@@ -309,6 +313,26 @@ func (rwh *RaceWeekendHandler) manageFilters(w http.ResponseWriter, r *http.Requ
 		logrus.WithError(err).Error("Couldn't list results files for sorting")
 	}
 
+	parentSessionResults, err := parentSession.FinishingGrid(raceWeekend)
+
+	if err != nil {
+		logrus.WithError(err).Errorf("Couldn't load previous session results")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	var championshipClasses map[uuid.UUID]*ChampionshipClass
+
+	if raceWeekend.HasLinkedChampionship() {
+		championshipClasses = make(map[uuid.UUID]*ChampionshipClass)
+
+		for _, result := range parentSessionResults {
+			class := result.ChampionshipClass(raceWeekend)
+
+			championshipClasses[class.ID] = class
+		}
+	}
+
 	rwh.viewRenderer.MustLoadPartial(w, r, "race-weekend/popups/manage-filters.html", &raceWeekendFilterTemplateVars{
 		RaceWeekend:                raceWeekend,
 		ParentSession:              parentSession,
@@ -316,6 +340,8 @@ func (rwh *RaceWeekendHandler) manageFilters(w http.ResponseWriter, r *http.Requ
 		ResultsAvailableForSorting: sessionResults,
 		Filter:                     filter,
 		AvailableSorters:           RaceWeekendEntryListSorters,
+		ParentSessionResults:       parentSessionResults,
+		ChampionshipClasses:        championshipClasses,
 	})
 }
 
@@ -444,6 +470,8 @@ func (rwh *RaceWeekendHandler) export(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	w.Header().Add("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.json"`, raceWeekend.Name))
+
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(raceWeekend)
@@ -485,7 +513,7 @@ func (rwh *RaceWeekendHandler) scheduleSession(w http.ResponseWriter, r *http.Re
 	if !startWhenParentFinished {
 		var location *time.Location
 
-		location, err := time.LoadLocation(timezone)
+		location, err := tz.LoadLocation(timezone)
 
 		if err != nil {
 			logrus.WithError(err).Errorf("could not find location: %s", location)
@@ -504,7 +532,7 @@ func (rwh *RaceWeekendHandler) scheduleSession(w http.ResponseWriter, r *http.Re
 		message = fmt.Sprintf("We have scheduled the Race Weekend Session to begin at %s", date.Format(time.RFC1123))
 
 	} else {
-		message = fmt.Sprintf("We have scheduled the Race Weekend Session to begin after the parent session(s) complete.")
+		message = "We have scheduled the Race Weekend Session to begin after the parent session(s) complete."
 	}
 
 	err := rwh.raceWeekendManager.ScheduleSession(championshipID, championshipEventID, date, startWhenParentFinished)

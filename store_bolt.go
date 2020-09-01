@@ -26,10 +26,12 @@ var (
 	raceWeekendsBucketName  = []byte("raceWeekends")
 	liveTimingsBucketName   = []byte("liveTimings")
 
-	serverOptionsKey   = []byte("serverOptions")
-	strackerOptionsKey = []byte("strackerOptions")
-	liveTimingsKey     = []byte("liveTimings")
-	lastRaceEventKey   = []byte("lastRaceEvent")
+	serverOptionsKey      = []byte("serverOptions")
+	strackerOptionsKey    = []byte("strackerOptions")
+	kissMyRankOptionsKey  = []byte("kissMyRankOptions")
+	realPenaltyOptionsKey = []byte("realPenaltyOptions")
+	liveTimingsKey        = []byte("liveTimings")
+	lastRaceEventKey      = []byte("lastRaceEvent")
 )
 
 func (rs *BoltStore) customRaceBucket(tx *bbolt.Tx) (*bbolt.Bucket, error) {
@@ -430,6 +432,10 @@ func (rs *BoltStore) LoadChampionship(id string) (*Championship, error) {
 		return nil, err
 	}
 
+	if err := loadChampionshipRaceWeekends(championship, rs); err != nil {
+		return nil, err
+	}
+
 	return championship, err
 }
 
@@ -784,7 +790,7 @@ func (rs *BoltStore) LoadRaceWeekend(id string) (*RaceWeekend, error) {
 		data := b.Get([]byte(id))
 
 		if data == nil {
-			return ErrChampionshipNotFound
+			return ErrRaceWeekendNotFound
 		}
 
 		return rs.decode(data, &raceWeekend)
@@ -848,6 +854,88 @@ func (rs *BoltStore) LoadStrackerOptions() (*StrackerConfiguration, error) {
 	})
 
 	return sto, err
+}
+
+func (rs *BoltStore) UpsertKissMyRankOptions(kmr *KissMyRankConfig) error {
+	return rs.db.Update(func(tx *bbolt.Tx) error {
+		bkt, err := rs.serverOptionsBucket(tx)
+
+		if err != nil {
+			return err
+		}
+
+		encoded, err := rs.encode(kmr)
+
+		if err != nil {
+			return err
+		}
+
+		return bkt.Put(kissMyRankOptionsKey, encoded)
+	})
+}
+
+func (rs *BoltStore) LoadKissMyRankOptions() (*KissMyRankConfig, error) {
+	// start with defaults
+	kmr := DefaultKissMyRankConfig()
+
+	err := rs.db.View(func(tx *bbolt.Tx) error {
+		bkt, err := rs.serverOptionsBucket(tx)
+
+		if err != nil {
+			return err
+		}
+
+		data := bkt.Get(kissMyRankOptionsKey)
+
+		if data == nil {
+			return nil
+		}
+
+		return rs.decode(data, &kmr)
+	})
+
+	return kmr, err
+}
+
+func (rs *BoltStore) UpsertRealPenaltyOptions(rpc *RealPenaltyConfig) error {
+	return rs.db.Update(func(tx *bbolt.Tx) error {
+		bkt, err := rs.serverOptionsBucket(tx)
+
+		if err != nil {
+			return err
+		}
+
+		encoded, err := rs.encode(rpc)
+
+		if err != nil {
+			return err
+		}
+
+		return bkt.Put(realPenaltyOptionsKey, encoded)
+	})
+}
+
+func (rs *BoltStore) LoadRealPenaltyOptions() (*RealPenaltyConfig, error) {
+	// start with defaults
+	rpc := DefaultRealPenaltyConfig()
+
+	err := rs.db.View(func(tx *bbolt.Tx) error {
+		bkt, err := rs.serverOptionsBucket(tx)
+
+		if err != nil {
+			return err
+		}
+
+		data := bkt.Get(realPenaltyOptionsKey)
+
+		if data == nil {
+			return nil
+		}
+
+		return rs.decode(data, &rpc)
+	})
+
+	return rpc, err
 }
 
 func (rs *BoltStore) liveTimingsDataBucket(tx *bbolt.Tx) (*bbolt.Bucket, error) {

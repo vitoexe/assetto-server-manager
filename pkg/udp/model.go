@@ -2,6 +2,7 @@ package udp
 
 import (
 	"regexp"
+	"time"
 
 	"golang.org/x/text/encoding/unicode/utf32"
 )
@@ -133,12 +134,14 @@ func (CollisionWithEnvironment) Event() Event {
 }
 
 type SessionCarInfo struct {
-	CarID          CarID      `json:"CarID"`
-	DriverName     string     `json:"DriverName"`
-	DriverGUID     DriverGUID `json:"DriverGUID"`
-	CarModel       string     `json:"CarModel"`
-	CarSkin        string     `json:"CarSkin"`
-	DriverInitials string     `json:"DriverInitials"`
+	CarID      CarID      `json:"CarID"`
+	DriverName string     `json:"DriverName"`
+	DriverGUID DriverGUID `json:"DriverGUID"`
+	CarModel   string     `json:"CarModel"`
+	CarSkin    string     `json:"CarSkin"`
+
+	DriverInitials string `json:"DriverInitials"`
+	CarName        string `json:"CarName"`
 
 	EventType Event `json:"EventType"`
 }
@@ -148,12 +151,28 @@ func (s SessionCarInfo) Event() Event {
 }
 
 type Chat struct {
-	CarID   CarID  `json:"CarID"`
-	Message string `json:"Message"`
+	CarID      CarID      `json:"CarID"`
+	Message    string     `json:"Message"`
+	DriverGUID DriverGUID `json:"DriverGUID"` // used for driver name colour in live timings
+	DriverName string     `json:"DriverName"`
+	Time       time.Time  `json:"Time"`
 }
 
 func (Chat) Event() Event {
 	return EventChat
+}
+
+func NewChat(message string, carID CarID, driverName string, driverGUID DriverGUID) (Chat, error) {
+	// the Assetto Corsa chat seems to not cope well with non-ascii characters. remove them.
+	message = regexp.MustCompile("[[:^ascii:]]").ReplaceAllLiteralString(message, "")
+
+	return Chat{
+		CarID:      carID,
+		Message:    message,
+		DriverGUID: driverGUID,
+		DriverName: driverName,
+		Time:       time.Now(),
+	}, nil
 }
 
 type CarInfo struct {
@@ -242,10 +261,10 @@ func (EnableRealtimePosInterval) Event() Event {
 	return EventRealtimeposInterval
 }
 
-func NewEnableRealtimePosInterval(interval uint16) EnableRealtimePosInterval {
+func NewEnableRealtimePosInterval(interval int) EnableRealtimePosInterval {
 	return EnableRealtimePosInterval{
 		Type:     uint8(EventRealtimeposInterval),
-		Interval: interval,
+		Interval: uint16(interval),
 	}
 }
 

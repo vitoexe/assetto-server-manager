@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -14,14 +15,16 @@ const (
 	maxAuditEntries = 1000
 
 	// private data
-	accountsDir         = "accounts"
-	serverOptionsFile   = "server_options.json"
-	frameLinksFile      = "frame_links.json"
-	serverMetaDir       = "meta"
-	auditFile           = "audit.json"
-	strackerOptionsFile = "stracker_options.json"
-	liveTimingsDataFile = "live_timings.json"
-	lastRaceEventFile   = "last_race_event.json"
+	accountsDir            = "accounts"
+	serverOptionsFile      = "server_options.json"
+	frameLinksFile         = "frame_links.json"
+	serverMetaDir          = "meta"
+	auditFile              = "audit.json"
+	strackerOptionsFile    = "stracker_options.json"
+	kissMyRankOptionsFile  = "kissmyrank_options.json"
+	realPenaltyOptionsFile = "realpenalty_options.json"
+	liveTimingsDataFile    = "live_timings.json"
+	lastRaceEventFile      = "last_race_event.json"
 
 	// shared data
 	championshipsDir = "championships"
@@ -170,6 +173,8 @@ func (rs *JSONStore) decodeFile(path, filename string, out interface{}) error {
 }
 
 func (rs *JSONStore) UpsertCustomRace(race *CustomRace) error {
+	race.Updated = time.Now()
+
 	return rs.encodeFile(rs.shared, filepath.Join(customRacesDir, race.UUID.String()+".json"), race)
 }
 
@@ -203,6 +208,10 @@ func (rs *JSONStore) ListCustomRaces() ([]*CustomRace, error) {
 
 		customRaces = append(customRaces, race)
 	}
+
+	sort.Slice(customRaces, func(i, j int) bool {
+		return customRaces[i].Updated.After(customRaces[j].Updated)
+	})
 
 	return customRaces, nil
 }
@@ -296,6 +305,8 @@ func (rs *JSONStore) LoadServerOptions() (*GlobalServerConfig, error) {
 }
 
 func (rs *JSONStore) UpsertChampionship(c *Championship) error {
+	c.Updated = time.Now()
+
 	return rs.encodeFile(rs.shared, filepath.Join(championshipsDir, c.ID.String()+".json"), c)
 }
 
@@ -318,6 +329,10 @@ func (rs *JSONStore) ListChampionships() ([]*Championship, error) {
 		championships = append(championships, c)
 	}
 
+	sort.Slice(championships, func(i, j int) bool {
+		return championships[i].Updated.After(championships[j].Updated)
+	})
+
 	return championships, nil
 }
 
@@ -327,6 +342,10 @@ func (rs *JSONStore) LoadChampionship(id string) (*Championship, error) {
 	err := rs.decodeFile(rs.shared, filepath.Join(championshipsDir, id+".json"), &championship)
 
 	if err != nil {
+		return nil, err
+	}
+
+	if err := loadChampionshipRaceWeekends(championship, rs); err != nil {
 		return nil, err
 	}
 
@@ -364,7 +383,7 @@ func (rs *JSONStore) ListPrevFrames() ([]string, error) {
 }
 
 func (rs *JSONStore) ListAccounts() ([]*Account, error) {
-	files, err := rs.listFiles(filepath.Join(rs.base, accountsDir))
+	files, err := rs.listFiles(filepath.Join(rs.shared, accountsDir))
 
 	if err != nil {
 		return nil, err
@@ -388,15 +407,17 @@ func (rs *JSONStore) ListAccounts() ([]*Account, error) {
 func (rs *JSONStore) UpsertAccount(a *Account) error {
 	a.Updated = time.Now()
 
-	return rs.encodeFile(rs.base, filepath.Join(accountsDir, a.Name+".json"), a)
+	return rs.encodeFile(rs.shared, filepath.Join(accountsDir, a.Name+".json"), a)
 }
 
 func (rs *JSONStore) FindAccountByName(name string) (*Account, error) {
 	var account *Account
 
-	err := rs.decodeFile(rs.base, filepath.Join(accountsDir, name+".json"), &account)
+	err := rs.decodeFile(rs.shared, filepath.Join(accountsDir, name+".json"), &account)
 
-	if err != nil {
+	if os.IsNotExist(err) {
+		return nil, ErrAccountNotFound
+	} else if err != nil {
 		return nil, err
 	}
 
@@ -492,10 +513,16 @@ func (rs *JSONStore) ListRaceWeekends() ([]*RaceWeekend, error) {
 		raceWeekends = append(raceWeekends, rw)
 	}
 
+	sort.Slice(raceWeekends, func(i, j int) bool {
+		return raceWeekends[i].Updated.After(raceWeekends[j].Updated)
+	})
+
 	return raceWeekends, nil
 }
 
 func (rs *JSONStore) UpsertRaceWeekend(rw *RaceWeekend) error {
+	rw.Updated = time.Now()
+
 	return rs.encodeFile(rs.shared, filepath.Join(raceWeekendsDir, rw.ID.String()+".json"), rw)
 }
 
@@ -504,7 +531,9 @@ func (rs *JSONStore) LoadRaceWeekend(id string) (*RaceWeekend, error) {
 
 	err := rs.decodeFile(rs.shared, filepath.Join(raceWeekendsDir, id+".json"), &raceWeekend)
 
-	if err != nil {
+	if os.IsNotExist(err) {
+		return nil, ErrRaceWeekendNotFound
+	} else if err != nil {
 		return nil, err
 	}
 
@@ -536,6 +565,46 @@ func (rs *JSONStore) LoadStrackerOptions() (*StrackerConfiguration, error) {
 		strackerConfig := DefaultStrackerIni()
 
 		return strackerConfig, rs.UpsertStrackerOptions(strackerConfig)
+	} else if err != nil {
+		return nil, err
+	}
+
+	return out, err
+}
+
+func (rs *JSONStore) UpsertKissMyRankOptions(kmr *KissMyRankConfig) error {
+	return rs.encodeFile(rs.base, kissMyRankOptionsFile, kmr)
+}
+
+func (rs *JSONStore) LoadKissMyRankOptions() (*KissMyRankConfig, error) {
+	var out *KissMyRankConfig
+
+	err := rs.decodeFile(rs.base, kissMyRankOptionsFile, &out)
+
+	if os.IsNotExist(err) {
+		kmrConfig := DefaultKissMyRankConfig()
+
+		return kmrConfig, rs.UpsertKissMyRankOptions(kmrConfig)
+	} else if err != nil {
+		return nil, err
+	}
+
+	return out, err
+}
+
+func (rs *JSONStore) UpsertRealPenaltyOptions(rpc *RealPenaltyConfig) error {
+	return rs.encodeFile(rs.base, realPenaltyOptionsFile, rpc)
+}
+
+func (rs *JSONStore) LoadRealPenaltyOptions() (*RealPenaltyConfig, error) {
+	var out *RealPenaltyConfig
+
+	err := rs.decodeFile(rs.base, realPenaltyOptionsFile, &out)
+
+	if os.IsNotExist(err) {
+		rpcConfig := DefaultRealPenaltyConfig()
+
+		return rpcConfig, rs.UpsertRealPenaltyOptions(rpcConfig)
 	} else if err != nil {
 		return nil, err
 	}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"4d63.com/tz"
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -17,14 +18,24 @@ type CustomRace struct {
 	HasCustomName, OverridePassword bool
 	ReplacementPassword             string
 
-	Created       time.Time
-	Updated       time.Time
-	Deleted       time.Time
-	UUID          uuid.UUID
-	Starred, Loop bool
+	Created time.Time
+	Updated time.Time
+	Deleted time.Time
+	UUID    uuid.UUID
+	Starred bool
+	// Deprecated: Replaced by LoopServer
+	Loop       bool
+	LoopServer map[ServerID]bool
+
+	TimeAttackCombinedResultFile string
+
+	ForceStopTime        int
+	ForceStopWithDrivers bool
 
 	RaceConfig CurrentRaceConfig
 	EntryList  EntryList
+
+	ScheduledEvents map[ServerID]*ScheduledEventBase
 }
 
 func (cr *CustomRace) GetRaceConfig() CurrentRaceConfig {
@@ -36,15 +47,19 @@ func (cr *CustomRace) GetEntryList() EntryList {
 }
 
 func (cr *CustomRace) IsLooping() bool {
-	return cr.Loop
+	if cr.LoopServer == nil {
+		return false
+	}
+
+	return cr.LoopServer[serverID]
 }
 
 func (cr *CustomRace) EventName() string {
 	if cr.HasCustomName {
 		return cr.Name
-	} else {
-		return trackSummary(cr.RaceConfig.Track, cr.RaceConfig.TrackLayout)
 	}
+
+	return trackSummary(cr.RaceConfig.Track, cr.RaceConfig.TrackLayout)
 }
 
 func (cr *CustomRace) OverrideServerPassword() bool {
@@ -67,12 +82,20 @@ func (cr *CustomRace) IsRaceWeekend() bool {
 	return false
 }
 
+func (cr *CustomRace) IsTimeAttack() bool {
+	return cr.RaceConfig.TimeAttack
+}
+
 func (cr *CustomRace) HasSignUpForm() bool {
 	return false
 }
 
 func (cr *CustomRace) GetID() uuid.UUID {
 	return cr.UUID
+}
+
+func (cr *CustomRace) GetScheduledServerID() ServerID {
+	return cr.ScheduledServerID
 }
 
 func (cr *CustomRace) GetRaceSetup() CurrentRaceConfig {
@@ -95,16 +118,30 @@ func (cr *CustomRace) ReadOnlyEntryList() EntryList {
 	return cr.EntryList
 }
 
+func (cr *CustomRace) GetForceStopTime() time.Duration {
+	return time.Minute * time.Duration(cr.ForceStopTime)
+}
+
+func (cr *CustomRace) GetForceStopWithDrivers() bool {
+	return cr.ForceStopWithDrivers
+}
+
 type CustomRaceHandler struct {
 	*BaseHandler
 
-	raceManager *RaceManager
+	raceManager         *RaceManager
+	championshipManager *ChampionshipManager
+	raceWeekendManager  *RaceWeekendManager
+	store               Store
 }
 
-func NewCustomRaceHandler(base *BaseHandler, raceManager *RaceManager) *CustomRaceHandler {
+func NewCustomRaceHandler(base *BaseHandler, raceManager *RaceManager, store Store, championshipManager *ChampionshipManager, raceWeekendManager *RaceWeekendManager) *CustomRaceHandler {
 	return &CustomRaceHandler{
-		BaseHandler: base,
-		raceManager: raceManager,
+		BaseHandler:         base,
+		raceManager:         raceManager,
+		store:               store,
+		championshipManager: championshipManager,
+		raceWeekendManager:  raceWeekendManager,
 	}
 }
 
@@ -131,6 +168,98 @@ func (crh *CustomRaceHandler) list(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type eventDetailsTemplateVars struct {
+	BaseTemplateVars
+
+	EventConfig    CurrentRaceConfig
+	EntryList      EntryList
+	EventName      string
+	IsChampionship bool
+}
+
+func (crh *CustomRaceHandler) view(w http.ResponseWriter, r *http.Request) {
+	var (
+		eventConfig    CurrentRaceConfig
+		eventName      string
+		entryList      EntryList
+		isChampionship bool
+	)
+
+	if customRaceID := r.URL.Query().Get("custom-race"); customRaceID != "" {
+		race, err := crh.store.FindCustomRaceByID(customRaceID)
+
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		eventConfig = race.RaceConfig
+		eventName = race.Name
+		entryList = race.EntryList
+	} else if championshipID := r.URL.Query().Get("championshipID"); championshipID != "" {
+		championship, err := crh.championshipManager.LoadChampionship(championshipID)
+
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		eventID := r.URL.Query().Get("eventID")
+
+		event, _, err := championship.EventByID(eventID)
+
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		eventName = "Championship Event"
+		eventConfig, entryList = crh.championshipManager.FinalEventConfigurationFiles(championship, event, false)
+
+		isChampionship = true
+	} else if raceWeekendID := r.URL.Query().Get("raceWeekendID"); raceWeekendID != "" {
+		raceWeekend, err := crh.raceWeekendManager.LoadRaceWeekend(raceWeekendID)
+
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		sessionID := r.URL.Query().Get("sessionID")
+
+		session, err := raceWeekend.FindSessionByID(sessionID)
+
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		eventConfig = session.RaceConfig
+		eventName = fmt.Sprintf("%s (%s)", session.Name(), raceWeekend.Name)
+		rwe, err := session.GetRaceWeekendEntryList(raceWeekend, nil, "")
+
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		entryList = rwe.AsEntryList()
+		isChampionship = raceWeekend.HasLinkedChampionship()
+	}
+
+	if eventConfig.Track == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	crh.viewRenderer.MustLoadPartial(w, r, "custom-race/popups/view.html", &eventDetailsTemplateVars{
+		EventConfig:    eventConfig,
+		EventName:      eventName,
+		EntryList:      entryList,
+		IsChampionship: isChampionship,
+	})
+}
+
 func (crh *CustomRaceHandler) createOrEdit(w http.ResponseWriter, r *http.Request) {
 	customRaceData, err := crh.raceManager.BuildRaceOpts(r)
 
@@ -147,7 +276,7 @@ func (crh *CustomRaceHandler) submit(w http.ResponseWriter, r *http.Request) {
 	err := crh.raceManager.SetupCustomRace(r)
 
 	if err != nil {
-		logrus.WithError(err).Errorf("couldn't apply quick race")
+		logrus.WithError(err).Errorf("couldn't apply custom race")
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
@@ -182,7 +311,7 @@ func (crh *CustomRaceHandler) schedule(w http.ResponseWriter, r *http.Request) {
 	timeString := r.FormValue("event-schedule-time")
 	timezone := r.FormValue("event-schedule-timezone")
 
-	location, err := time.LoadLocation(timezone)
+	location, err := tz.LoadLocation(timezone)
 
 	if err != nil {
 		logrus.WithError(err).Errorf("could not find location: %s", location)
@@ -223,7 +352,7 @@ func (crh *CustomRaceHandler) removeSchedule(w http.ResponseWriter, r *http.Requ
 }
 
 func (crh *CustomRaceHandler) start(w http.ResponseWriter, r *http.Request) {
-	err := crh.raceManager.StartCustomRace(chi.URLParam(r, "uuid"), false)
+	_, err := crh.raceManager.StartCustomRace(chi.URLParam(r, "uuid"), false)
 
 	if err != nil {
 		logrus.WithError(err).Errorf("couldn't apply custom race")
@@ -262,16 +391,23 @@ func (crh *CustomRaceHandler) star(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	AddFlash(w, r, "Custom race starred")
 	http.Redirect(w, r, r.Referer(), http.StatusFound)
 }
 
 func (crh *CustomRaceHandler) loop(w http.ResponseWriter, r *http.Request) {
-	err := crh.raceManager.ToggleLoopCustomRace(chi.URLParam(r, "uuid"))
+	loopStatus, err := crh.raceManager.ToggleLoopCustomRace(chi.URLParam(r, "uuid"))
 
 	if err != nil {
 		logrus.WithError(err).Errorf("couldn't add custom race to loop")
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
+	}
+
+	if loopStatus {
+		AddFlash(w, r, "Custom race added to loop")
+	} else {
+		AddFlash(w, r, "Custom race removed from loop")
 	}
 
 	http.Redirect(w, r, r.Referer(), http.StatusFound)

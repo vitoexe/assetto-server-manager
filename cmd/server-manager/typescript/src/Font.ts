@@ -41,6 +41,16 @@ import {faArrowDown} from "@fortawesome/free-solid-svg-icons/faArrowDown";
 import {faPencilAlt} from "@fortawesome/free-solid-svg-icons/faPencilAlt";
 import {faCarCrash} from "@fortawesome/free-solid-svg-icons/faCarCrash";
 import {faStopwatch} from "@fortawesome/free-solid-svg-icons/faStopwatch";
+import {faChartLine} from "@fortawesome/free-solid-svg-icons/faChartLine";
+import {faGasPump} from "@fortawesome/free-solid-svg-icons/faGasPump";
+import {faPuzzlePiece} from "@fortawesome/free-solid-svg-icons/faPuzzlePiece";
+import {faBalanceScale} from "@fortawesome/free-solid-svg-icons/faBalanceScale";
+import {faUsers} from "@fortawesome/free-solid-svg-icons/faUsers";
+import {faShieldAlt} from "@fortawesome/free-solid-svg-icons/faShieldAlt"
+import {faVideo} from "@fortawesome/free-solid-svg-icons/faVideo";
+import {faScroll} from "@fortawesome/free-solid-svg-icons/faScroll"
+import {faRedoAlt} from "@fortawesome/free-solid-svg-icons/faRedoAlt";
+import {faClock} from "@fortawesome/free-solid-svg-icons/faClock";
 
 library.add(
     faUser,
@@ -83,6 +93,16 @@ library.add(
     faPencilAlt,
     faCarCrash,
     faStopwatch,
+    faChartLine,
+    faGasPump,
+    faPuzzlePiece,
+    faBalanceScale,
+    faUsers,
+    faShieldAlt,
+    faVideo,
+    faScroll,
+    faRedoAlt,
+    faClock,
 );
 
 dom.watch();

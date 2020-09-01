@@ -56,4 +56,28 @@ type Store interface {
 	// Stracker Options
 	UpsertStrackerOptions(sto *StrackerConfiguration) error
 	LoadStrackerOptions() (*StrackerConfiguration, error)
+
+	// KissMyRank Options
+	UpsertKissMyRankOptions(kmr *KissMyRankConfig) error
+	LoadKissMyRankOptions() (*KissMyRankConfig, error)
+
+	// RealPenalty options
+	UpsertRealPenaltyOptions(rpc *RealPenaltyConfig) error
+	LoadRealPenaltyOptions() (*RealPenaltyConfig, error)
+}
+
+func loadChampionshipRaceWeekends(championship *Championship, store Store) error {
+	var err error
+
+	for _, event := range championship.Events {
+		if event.IsRaceWeekend() {
+			event.RaceWeekend, err = store.LoadRaceWeekend(event.RaceWeekendID.String())
+
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }

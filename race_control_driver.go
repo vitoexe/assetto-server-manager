@@ -1,11 +1,12 @@
 package servermanager
 
 import (
+	"context"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/cj123/assetto-server-manager/pkg/udp"
+	"github.com/JustaPenguin/assetto-server-manager/pkg/udp"
 
 	"github.com/sirupsen/logrus"
 )
@@ -17,9 +18,15 @@ func NewRaceControlDriver(carInfo udp.SessionCarInfo) *RaceControlDriver {
 		LastSeen: time.Now(),
 	}
 
-	driver.Cars[carInfo.CarModel] = &RaceControlCarLapInfo{}
+	driver.Cars[carInfo.CarModel] = NewRaceControlCarLapInfo(carInfo.CarModel)
 
 	return driver
+}
+
+func NewRaceControlCarLapInfo(carModel string) *RaceControlCarLapInfo {
+	return &RaceControlCarLapInfo{
+		CarName: prettifyName(carModel, true),
+	}
 }
 
 type RaceControlDriver struct {
@@ -36,17 +43,22 @@ type RaceControlDriver struct {
 
 	Collisions []Collision `json:"Collisions"`
 
+	driverSwapContext context.Context
+	driverSwapCfn     context.CancelFunc
+
 	// Cars is a map of CarModel to the information for that car.
 	Cars map[string]*RaceControlCarLapInfo `json:"Cars"`
+
+	mutex sync.Mutex
 }
 
 func (rcd *RaceControlDriver) CurrentCar() *RaceControlCarLapInfo {
 	if car, ok := rcd.Cars[rcd.CarInfo.CarModel]; ok {
 		return car
-	} else {
-		logrus.Warnf("Could not find current car for driver: %s (current car: %s)", rcd.CarInfo.DriverGUID, rcd.CarInfo.CarModel)
-		return &RaceControlCarLapInfo{}
 	}
+
+	logrus.Warnf("Could not find current car for driver: %s (current car: %s)", rcd.CarInfo.DriverGUID, rcd.CarInfo.CarModel)
+	return &RaceControlCarLapInfo{}
 }
 
 type RaceControlCarLapInfo struct {
@@ -57,6 +69,7 @@ type RaceControlCarLapInfo struct {
 	LastLap              time.Duration `json:"LastLap"`
 	LastLapCompletedTime time.Time     `json:"LastLapCompletedTime" ts:"date"`
 	TotalLapTime         time.Duration `json:"TotalLapTime"`
+	CarName              string        `json:"CarName"`
 }
 
 type DriverMap struct {

@@ -1,11 +1,13 @@
 package servermanager
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/cj123/ini"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -15,21 +17,54 @@ func (f FilterError) Error() string {
 	return string(f)
 }
 
+type RaceWeekendFilterSplitType string
+
+func (fst RaceWeekendFilterSplitType) String() string {
+	return string(fst)
+}
+
+const (
+	SplitTypeNumeric               RaceWeekendFilterSplitType = "Numeric"
+	SplitTypeManualDriverSelection RaceWeekendFilterSplitType = "Manual Driver Selection"
+	SplitTypeChampionshipClass     RaceWeekendFilterSplitType = "Championship Class"
+)
+
 type RaceWeekendSessionToSessionFilter struct {
+	// IsPreview indicates that the Filter is for preview only, and will not actually affect a starting grid.
 	IsPreview bool
 
+	// ResultStart is the beginning of the split from the previous session's result
 	ResultStart int
-	ResultEnd   int
+	// ResultEnd is the end of the split from the previous session's result
+	ResultEnd int
 
+	// NumEntrantsToReverse defines how many entrants to reverse. -1 indicates all, 0 indicates none, or N entrants.
 	NumEntrantsToReverse int
 
+	// EntryListStart is where to place the entrants in the starting grid of the next session
 	EntryListStart int
 
+	// SortType defines how the entrants are sorted
 	SortType string
 
+	// ForceUseTyreFromFastestLap forces drivers to start on the same tyre compound as the tyre compound that
+	// they achieved their fastest lap on in the previous session
 	ForceUseTyreFromFastestLap bool
 
+	// AvailableResultsForSorting are the results files to be used for sorting the entrants.
 	AvailableResultsForSorting []string
+
+	// SplitType defines the kind of splitting that we want to do.
+	SplitType RaceWeekendFilterSplitType
+
+	// SelectedDriverGUIDs is a list of the currently selected driver GUIDs. This is only populated if SplitType == SplitTypeManualDriverSelection
+	SelectedDriverGUIDs []string
+
+	// SelectedChampionshipClassIDs is a list of the currently selected ChampionshipClass IDs. This is only populated if SplitType == SplitTypeChampionshipClass
+	SelectedChampionshipClassIDs map[uuid.UUID]bool
+
+	// Deprecated: ManualDriverSelection indicates that drivers are picked manually from the above results file.
+	ManualDriverSelection bool
 }
 
 func reverseEntrants(numToReverse int, entrants []*RaceWeekendSessionEntrant) {
@@ -59,6 +94,8 @@ func reverseEntrants(numToReverse int, entrants []*RaceWeekendSessionEntrant) {
 	}
 }
 
+var ErrRaceWeekendUnknownSplitType = errors.New("servermanager: unknown split type")
+
 // Filter takes a set of RaceWeekendSessionEntrants formed by the results of the parent session and filters them into a child session entry list.
 func (f RaceWeekendSessionToSessionFilter) Filter(raceWeekend *RaceWeekend, parentSession, childSession *RaceWeekendSession, parentSessionResults []*RaceWeekendSessionEntrant, childSessionEntryList *RaceWeekendEntryList) error {
 	if parentSession.Completed() || childSession.IsBase() {
@@ -72,20 +109,46 @@ func (f RaceWeekendSessionToSessionFilter) Filter(raceWeekend *RaceWeekend, pare
 		}
 	}
 
-	resultStart, resultEnd, entryListStart := f.ResultStart, f.ResultEnd, f.EntryListStart
+	entryListStart := f.EntryListStart - 1
 
-	resultStart--
-	entryListStart--
+	var split []*RaceWeekendSessionEntrant
 
-	if resultStart > len(parentSessionResults) {
-		return nil
+	switch f.SplitType {
+	case SplitTypeNumeric:
+		resultStart, resultEnd := f.ResultStart, f.ResultEnd
+
+		resultStart--
+
+		if resultStart > len(parentSessionResults) {
+			return nil
+		}
+
+		if resultEnd > len(parentSessionResults) {
+			resultEnd = len(parentSessionResults)
+		}
+
+		split = parentSessionResults[resultStart:resultEnd]
+	case SplitTypeManualDriverSelection:
+		for _, driverGUID := range f.SelectedDriverGUIDs {
+			for _, entrant := range parentSessionResults {
+				if entrant.Car.GetGUID() == driverGUID {
+					split = append(split, entrant)
+					break
+				}
+			}
+		}
+	case SplitTypeChampionshipClass:
+		for _, entrant := range parentSessionResults {
+			class := entrant.ChampionshipClass(raceWeekend)
+
+			if _, ok := f.SelectedChampionshipClassIDs[class.ID]; ok {
+				split = append(split, entrant)
+			}
+		}
+
+	default:
+		return ErrRaceWeekendUnknownSplitType
 	}
-
-	if resultEnd > len(parentSessionResults) {
-		resultEnd = len(parentSessionResults)
-	}
-
-	split := parentSessionResults[resultStart:resultEnd]
 
 	if !parentSession.Completed() {
 		reverseEntrants(f.NumEntrantsToReverse, split)
@@ -93,7 +156,7 @@ func (f RaceWeekendSessionToSessionFilter) Filter(raceWeekend *RaceWeekend, pare
 
 	splitIndex := 0
 
-	for pitBox := entryListStart; pitBox < entryListStart+(resultEnd-resultStart); pitBox++ {
+	for pitBox := entryListStart; pitBox < entryListStart+len(split); pitBox++ {
 		entrant := split[splitIndex]
 		entrant.SessionID = parentSession.ID
 
