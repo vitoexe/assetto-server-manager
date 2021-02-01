@@ -1,3 +1,30 @@
+v1.7.9
+------
+
+Added:
+
+* Improved the Track selection dropdowns in all Race Setup pages. You can now see more readable track names, and filter all tracks and layouts.
+* Adds missing Real Penalty 'APP_UDP_PORT' option.
+
+Fixed:
+
+* Fixes an issue where Live Timings lap counts could reset if a driver does not cleanly disconnect from the Assetto Corsa Server.
+* Fixes an issue where Real Penalty config values for Jump Start would not be assigned correctly.
+* The Spectator Car will only be filtered out from Championship Points calculations if Spectator Car is enabled in the Championship settings.
+* Fixes an issue where cars could be duplicated in race setups
+* Fixes a crash that could occur when displaying information about a track.
+* Fixes an issue where multiservers could omit scanning new cars if they were added in groups, rather than one at once. If your server is missing cars in the car list, please "Rebuild Search Index" on the Server Options page!
+* Fixes an issue where track names would not update when a track was reuploaded.
+* Fixes an issue where pitboxes could not be loaded for a track with an invalid JSON file.
+* Improved process management for plugins and acServer itself. Thanks to @mayfield for this one!
+* Duplicating a Championship now clears all registration requests.
+* Fixes a crash that could occur when concurrently reading weather configurations.
+* Fixes an issue where duplicating a Championship with Race Weekends inside it would result in the Race Weekends not copying across correctly.
+* KissMyRank is now instructed to stop using a command in its console. This should hopefully prevent issues with data files corrupting on stop.
+* Fixes an issue where Race Weekend sessions could incorrectly sort splits out of order.
+
+---
+
 v1.7.8
 ------
 
@@ -15,6 +42,7 @@ Added:
 * New lua plugin file (race-control.lua) containing onChat function which is called whenever a chat message is sent in-game, from the live timings page or from a lua script
 * (Multiserver) Events across all servers will now be shown on the Calendar, events on other servers will be marked as so. 
 * Events using "Any Available Car" now split the car types evenly between the number of entrants.
+* Added a "Download Logs" button to the Real Penalty Options page. You can use this to view logs from your previous Real Penalty sessions, including the penalties applied by the tool.
 
 Fixed:
 
@@ -25,6 +53,10 @@ Fixed:
 * Fixes an issue where signed up Championship Entrants would show as 'Unranked' in ACSR.
 * Commands (anything starting with a /) will no longer be displayed in the Live Timings chat window.
 * The Live Timings timer will now show the number of days remaining in an event if it is longer than a day.
+* Fixes an issue where duplicating a Race Weekend in a Championship could cause Server Manager to crash.
+* Fixes an issue where decimal values could not be modified in Real Penalty Options.
+* Fixes an issue where scheduled Championship Race Weekends could cause excessive CPU load when rendering the calendar.
+* Race Weekend sessions with multiple parents now filter out any duplicate entrants, keeping the entrant with the lowest sort position.
 
 ---
 

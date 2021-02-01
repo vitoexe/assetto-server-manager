@@ -107,7 +107,6 @@ func Router(
 		// pages
 		r.Get("/", serverAdministrationHandler.home)
 		r.Get("/changelog", serverAdministrationHandler.changelog)
-		r.Get("/premium", serverAdministrationHandler.premium)
 
 		r.Mount("/stracker/", http.HandlerFunc(strackerHandler.proxy))
 
@@ -179,6 +178,9 @@ func Router(
 
 		r.Get("/content/tracks/{track}/ui/preview.png", AssetCacheHeaders(http.HandlerFunc(tracksHandler.trackImage), true))
 		r.Get("/content/tracks/{track}/ui/{layout}/preview.png", AssetCacheHeaders(http.HandlerFunc(tracksHandler.trackImage), true))
+
+		r.Get("/content/tracks/{track}/ui/ui_track.json", AssetCacheHeaders(http.HandlerFunc(tracksHandler.trackInfo), true))
+		r.Get("/content/tracks/{track}/ui/{layout}/ui_track.json", AssetCacheHeaders(http.HandlerFunc(tracksHandler.trackInfo), true))
 
 		// race weekends
 		r.Get("/race-weekends", raceWeekendHandler.list)
@@ -348,6 +350,7 @@ func Router(
 		r.HandleFunc("/stracker/options", strackerHandler.options)
 		r.HandleFunc("/kissmyrank/options", kissMyRankHandler.options)
 		r.HandleFunc("/realpenalty/options", realPenaltyHandler.options)
+		r.HandleFunc("/realpenalty/logs", realPenaltyHandler.downloadLogs)
 	})
 
 	FileServer(r, "/static", fs, false)

@@ -73,9 +73,13 @@ func (rw *RaceWeekend) CompletedTime() time.Time {
 func (rw *RaceWeekend) Duplicate() (*RaceWeekend, error) {
 	buf := new(bytes.Buffer)
 
+	x := *rw
+	// make the championship nil so we don't get an infinite loop calling gob.Encode
+	x.Championship = nil
+
 	var newRaceWeekend RaceWeekend
 
-	if err := gob.NewEncoder(buf).Encode(rw); err != nil {
+	if err := gob.NewEncoder(buf).Encode(x); err != nil {
 		return nil, err
 	}
 
@@ -865,6 +869,11 @@ func (rws *RaceWeekendSession) GetRaceWeekendEntryList(rw *RaceWeekend, override
 		}
 	}
 
+	// do an initial sort of the entrylist by pitboxes, as sessions may add drivers out of order.
+	sort.Slice(entryList, func(i, j int) bool {
+		return entryList[i].PitBox < entryList[j].PitBox
+	})
+
 	if rw.SessionCanBeRun(rws) {
 		// sorting can only be run if a session is ready to be run.
 		sorter := GetRaceWeekendEntryListSort(rws.SortType)
@@ -873,10 +882,25 @@ func (rws *RaceWeekendSession) GetRaceWeekendEntryList(rw *RaceWeekend, override
 			return nil, err
 		}
 
+		var finalEntryList RaceWeekendEntryList
+		existingGUIDs := make(map[string]bool)
+
+		// filter out duplicate entrants, keeping their highest ranking in the entry list
+		for _, entrant := range entryList {
+			if _, guidAlreadyInEntryList := existingGUIDs[entrant.Car.GetGUID()]; guidAlreadyInEntryList {
+				continue
+			}
+
+			finalEntryList = append(finalEntryList, entrant)
+			existingGUIDs[entrant.Car.GetGUID()] = true
+		}
+
 		// amend pitboxes post-sort
-		for i, entrant := range entryList {
+		for i, entrant := range finalEntryList {
 			entrant.PitBox = i
 		}
+
+		entryList = finalEntryList
 	}
 
 	return entryList, nil
